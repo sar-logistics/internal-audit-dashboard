@@ -85,6 +85,14 @@
                  background: var(--paper); border: 1px solid var(--line); color: var(--ink-soft); }
   .btn-signout:hover { background: #D6534A; border-color: #D6534A; color: #fff; }
   .content { padding: 26px 32px 60px; }
+  .company-tabs { display: flex; gap: 4px; padding: 0 24px; background: var(--card); border-bottom: 1px solid var(--line);
+                  overflow-x: auto; scrollbar-width: none; }
+  .company-tabs button { border: none; background: none; padding: 16px 18px 14px; font: inherit; font-size: 14px; font-weight: 500;
+                         color: var(--ink-soft); cursor: pointer; white-space: nowrap; border-bottom: 3px solid transparent; }
+  .company-tabs button:hover { color: var(--ink); }
+  .company-tabs button.on { color: #1E3A6E; font-weight: 700; border-bottom-color: #2C4E82; }
+  .co-empty { background: var(--card); border: 1px dashed var(--line); border-radius: 14px; padding: 48px 24px; text-align: center;
+              color: var(--ink-soft); font-size: 14px; }
 
   /* KPI cards */
   .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
@@ -172,7 +180,7 @@
     </div>
     <div class="greeting" id="greeting"></div>
     <nav class="nav" id="btReports">
-      <div class="nav-label">Canada</div>
+      <div class="nav-label">SAR Canada</div>
       <div class="nav-item active" data-report="total" title="Total Jobs Created">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><path d="M5.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M1.5 8.5h13"/></svg>
         <span>Total Jobs Created</span>
@@ -204,8 +212,19 @@
   </aside>
 
   <div class="main">
+    <div class="company-tabs" id="companyTabs">
+      <button type="button" data-co="SAR Group">SAR Group</button>
+      <button type="button" data-co="SAR STSPL">SAR STSPL</button>
+      <button type="button" data-co="SAR Supply Chain">SAR Supply Chain</button>
+      <button type="button" data-co="SAR USA">SAR USA</button>
+      <button type="button" data-co="SAR Canada" class="on">SAR Canada</button>
+      <button type="button" data-co="SAR Singapore (FF)">SAR Singapore (FF)</button>
+      <button type="button" data-co="SAR Thailand">SAR Thailand</button>
+      <button type="button" data-co="SAR Indonesia">SAR Indonesia</button>
+      <button type="button" data-co="SAR UAE">SAR UAE</button>
+    </div>
     <div class="topbar">
-      <h1>Canada</h1>
+      <h1 id="pageTitle">SAR Canada</h1>
       <div class="topbar-actions">
         <button class="btn-refresh" id="caRefresh" type="button">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 8V3.5M13.5 8H9"/></svg>
@@ -216,7 +235,8 @@
         </button>
       </div>
     </div>
-    <div class="content">
+    <div class="content hidden" id="coEmpty"><div class="co-empty" id="coEmptyText"></div></div>
+    <div class="content" id="canadaContent">
       <div id="caError" class="hidden"></div>
       <div class="kpi-row">
         <div class="kpi"><div class="label">Unbilled Revenue</div><div class="value" id="kUr">–</div><div class="delta" id="kUrSub">&nbsp;</div></div>
@@ -480,6 +500,21 @@ $("btCollapse").onclick = () => { bt.open.clear(); renderBranchTable(); };
 $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+
+// ============================================================ company tabs
+// Only SAR Canada has data so far; the other companies show a placeholder until they are connected.
+$("companyTabs").onclick = (e) => {
+  const b = e.target.closest("button[data-co]");
+  if (!b) return;
+  const co = b.dataset.co, isCanada = co === "SAR Canada";
+  document.querySelectorAll("#companyTabs button").forEach((x) => x.classList.toggle("on", x === b));
+  $("pageTitle").textContent = co;
+  $("canadaContent").classList.toggle("hidden", !isCanada);
+  $("btReports").classList.toggle("hidden", !isCanada);
+  $("caRefresh").classList.toggle("hidden", !isCanada);
+  $("coEmpty").classList.toggle("hidden", isCanada);
+  $("coEmptyText").textContent = `${co} isn't connected to the audit dashboard yet.`;
+};
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
