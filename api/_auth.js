@@ -55,7 +55,7 @@ export async function authenticate(req) {
 }
 
 export function sendError(res, err) {
-  const status = err instanceof HttpError ? err.status : 500;
-  if (status === 500) console.error(err);
-  return res.status(status).json({ error: status === 500 ? "Server error" : err.message, code: err.code });
+  const known = err instanceof HttpError;
+  if (!known || err.status >= 500) console.error(err);
+  return res.status(known ? err.status : 500).json({ error: known ? err.message : "Server error", code: err.code });
 }

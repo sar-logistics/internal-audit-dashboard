@@ -98,6 +98,17 @@ export default async function handler(req, res) {
     }
     return res.status(200).json(cache.payload);
   } catch (err) {
-    return sendError(res, err);
+    return sendError(res, err instanceof HttpError ? err : mongoError(err));
   }
+}
+
+// Turns a MongoDB driver error into a message that says what to fix (no secrets in it).
+function mongoError(err) {
+  console.error("canada-kpis:", err);
+  const m = String(err && err.message || "");
+  if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, "Database sign-in failed: check the user name and password in CA_MONGO_URI.");
+  if (/not authorized|unauthorized/i.test(m)) return new HttpError(500, `The database user in CA_MONGO_URI can't read ${DB_NAME}: give it the read role on ${DB_NAME}.`);
+  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist|IP/i.test(m)) return new HttpError(500, "Can't reach the database: check the cluster address in CA_MONGO_URI and that Atlas Network Access allows Vercel (0.0.0.0/0).");
+  if (/Invalid scheme|URI|connection string/i.test(m)) return new HttpError(500, "CA_MONGO_URI is not a valid MongoDB connection string.");
+  return new HttpError(500, "Database error: " + m.slice(0, 200));
 }
