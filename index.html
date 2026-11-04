@@ -255,8 +255,8 @@
         <label for="btFrom">From</label><select class="select" id="btFrom"></select>
         <label for="btTo">To</label><select class="select" id="btTo"></select>
         <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
-        <span class="fx" id="btCurWrap"><select class="select" id="btCur" aria-label="Currency"><option>USD</option><option>CAD</option></select></span>
-        <span class="fx" id="btFx">1 USD = <input id="btRate" type="number" min="0.01" step="0.01" value="1.40" aria-label="CAD per USD"> CAD</span>
+        <span class="fx" id="btCurWrap"><select class="select" id="btCur" aria-label="Currency"><option>USD</option><option id="btCurLocal">CAD</option></select></span>
+        <span class="fx" id="btFx">1 USD = <input id="btRate" type="number" min="0.01" step="0.01" value="1.40" aria-label="Exchange rate"> <span id="btRateCur">CAD</span></span>
       </div>
       <div class="topbar-actions">
         <button class="btn-refresh" id="caRefresh" type="button">
@@ -370,22 +370,30 @@ async function start() {
 // Each connected company tab reads its own database through api/mongo-batch.js (dataset), in the
 // currency its data is stored in (source). Pop-up columns per company are set further down (drills).
 const ENTITIES = {
-  "SAR Canada": { dataset: "canada", source: "CAD" },
-  "SAR USA":    { dataset: "usa",    source: "USD" },
+  "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
+  "SAR USA":       { dataset: "usa",       source: "USD" },
+  "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500 },   // as the Indonesia ops dashboard
 };
 let company = "SAR Canada";
 const ent = () => ENTITIES[company];
 const loaded = {};   // company -> api response, so switching tabs back doesn't reload
 
 const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// SAR Canada amounts are in CAD; they are shown in USD by default at 1 USD = 1.4 CAD, or in CAD.
-// The viewer can change the rate; it is remembered in this browser only. SAR USA amounts are in USD.
-const DEFAULT_CAD_PER_USD = 1.4;
-const RATE_KEY = "auditCadPerUsd";
-let cadPerUsd = DEFAULT_CAD_PER_USD;
-try { const v = parseFloat(localStorage.getItem(RATE_KEY)); if (v > 0) cadPerUsd = v; } catch {}
-const currency = () => ent().source === "CAD" ? $("btCur").value : ent().source;
-const toShown = (v) => ent().source === "CAD" && currency() === "USD" ? (Number(v) || 0) / cadPerUsd : (Number(v) || 0);
+// Amounts are stored in each company's own currency (CAD, IDR, USD). They are shown in USD by default
+// at an exchange rate the viewer can change (1 USD = 1.4 CAD, 1 USD = 17,500 IDR to start), or in
+// the local currency. Each rate is remembered in this browser only.
+const rateKey = (cur) => cur === "CAD" ? "auditCadPerUsd" : `auditRate_${cur}`;
+const rates = {};
+const rateOf = (cur) => {
+  if (!rates[cur]) {
+    rates[cur] = Object.values(ENTITIES).find((e) => e.source === cur)?.defaultRate || 1;
+    try { const v = parseFloat(localStorage.getItem(rateKey(cur))); if (v > 0) rates[cur] = v; } catch {}
+  }
+  return rates[cur];
+};
+const isLocalCurrency = () => ent().source !== "USD";
+const currency = () => isLocalCurrency() ? $("btCur").value : "USD";
+const toShown = (v) => isLocalCurrency() && currency() === "USD" ? (Number(v) || 0) / rateOf(ent().source) : (Number(v) || 0);
 const fmtMoney = (v) => `${currency()} ${fmtAmt(toShown(v))}`;
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {
@@ -433,8 +441,8 @@ const AV_COLORS = ["#3F6E1E", "#2C4E82", "#0891B2", "#7C3AED", "#B45309", "#BE18
 const REPORTS = {
   total: { title: "Total Jobs Created", pool: "jobs", flag: () => true,                                 count: (n) => `${fmtInt(n)} total jobs` },
   open:  { title: "Open Jobs",          pool: "jobs", flag: (r) => !!r.open,                           count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} open` },
-  rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue" },
-  cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    amtKey: "unpostedCost" },
+  rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => !!r.revFlag,  amtKey: "unbilledRevenue" },
+  cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => !!r.costFlag, amtKey: "unpostedCost" },
 };
 const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
 
@@ -600,10 +608,18 @@ $("btExpand").onclick = () => {
 $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+const showRate = () => { const r = rateOf(ent().source); $("btRate").value = r >= 100 ? String(Math.round(r)) : r.toFixed(2); };
 function redrawMoney() {
-  const cad = ent().source === "CAD";
-  $("btCurWrap").classList.toggle("hidden", !cad);
-  $("btFx").classList.toggle("hidden", !cad || currency() !== "USD");
+  const local = isLocalCurrency(), cur = ent().source;
+  if ($("btCurLocal").textContent !== cur) {   // switched to a company with another local currency
+    $("btCurLocal").textContent = cur;
+    $("btCurLocal").value = cur;
+    $("btRateCur").textContent = cur;
+    $("btRate").step = rateOf(cur) >= 100 ? "1" : "0.01";
+    showRate();
+  }
+  $("btCurWrap").classList.toggle("hidden", !local);
+  $("btFx").classList.toggle("hidden", !local || currency() !== "USD");
   renderBranchTable();
   if (!$("kpiModal").classList.contains("hidden") && km.drill) {
     $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${currency()})` : ""}</th>`).join("")}</tr>`;
@@ -611,12 +627,12 @@ function redrawMoney() {
   }
 }
 $("btCur").onchange = redrawMoney;
-$("btRate").value = cadPerUsd.toFixed(2);
+showRate();
 $("btRate").onchange = () => {
-  const v = parseFloat($("btRate").value);
-  if (v > 0) cadPerUsd = v;   // a blank or invalid entry keeps the previous rate
-  $("btRate").value = cadPerUsd.toFixed(2);
-  try { localStorage.setItem(RATE_KEY, String(cadPerUsd)); } catch {}
+  const cur = ent().source, v = parseFloat($("btRate").value);
+  if (v > 0) rates[cur] = v;   // a blank or invalid entry keeps the previous rate
+  showRate();
+  try { localStorage.setItem(rateKey(cur), String(rates[cur])); } catch {}
   redrawMoney();
 };
 
@@ -696,10 +712,35 @@ const DRILLS_BY_DATASET = {
     cost:  { kind: "cost", cols: usEvaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS),     amtKey: "unpostedCost" },
   },
 };
+// SAR Indonesia: the Indonesia Sea Ops dashboard's columns (job records and th_ops_wip lines)
+const colList = (spec) => spec.split(";").map((x) => {
+  const [key, label, kind] = x.split(":");
+  return { key, label, ...(kind === "d" ? { date: true } : kind === "n" ? { num: true } : {}) };
+});
+const ID_COLS_TOTAL_JOBS = colList("shipmentId:Shipment ID;jobStatus:Job Status;jobBranch:Branch;jobDept:Department;" +
+  "operator:Job Operator;salesRep:Sales Rep;localClientName:Client;mode:Mode;direction:Direction;lob:LOB;originEtd:ETD:d;" +
+  "destinationEta:ETA:d;jobOpenedDate:Job Opened:d;origin:Origin;originCtry:Origin Country;destination:Destination;" +
+  "destCtry:Dest. Country;houseRef:House Ref;consolId:Consol ID;vessel:Vessel;carrierName:Carrier;mblNumber:MBL No.;" +
+  "containerNo:Container No.;consigneeName:Consignee;consignorName:Consignor;incoterm:Incoterm");
+const ID_COLS_OPEN_JOBS = colList("shipmentId:Shipment ID;jobStatus:Job Status;jobBranch:Branch;jobDept:Department;" +
+  "operator:Job Operator;localClientName:Client;originEtd:ETD:d;jobOpenedDate:Job Opened:d;mode:Mode;direction:Direction;" +
+  "lob:LOB;origin:Origin;destination:Destination;consolId:Consol ID;vessel:Vessel;mblNumber:MBL No.;houseRef:House Ref;" +
+  "consigneeName:Consignee;consignorName:Consignor");
+const ID_WIP_TAIL = "invoiceNumber:Invoice Number;recognized:Recognized:d;chargeType:Type;";
+const ID_WIP_REST = "lob:LOB;etdEta:ETD/ETA:d;etd:ETD:d;eta:ETA:d;localRef:Job Local Ref;trans:Trans;cont:Cont;" +
+  "jobBranch:Job Branch;jobDept:Job Dept;jobStatus:Job Status;localClient:Local Client;operator:Job Operator";
+DRILLS_BY_DATASET.indonesia = {
+  total: { kind: "jobs", cols: ID_COLS_TOTAL_JOBS },
+  open:  { kind: "jobs", cols: ID_COLS_OPEN_JOBS },
+  rev:   { kind: "rev",  amtKey: "wip",
+           cols: colList("shipmentId:Job #;chargeCode:Charge;wip:WIP:n;revenue:Revenue:n;accrual:Accrual:n;" + ID_WIP_TAIL + "cost:Cost:n;" + ID_WIP_REST) },
+  cost:  { kind: "cost", amtKey: "accrual",
+           cols: colList("shipmentId:Job #;chargeCode:Charge;accrual:Accrual:n;cost:Cost:n;wip:WIP:n;revenue:Revenue:n;" + ID_WIP_TAIL + ID_WIP_REST) },
+};
 const drills = () => DRILLS_BY_DATASET[ent().dataset];
 const KPI_VIEWS = {
-  ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, drill: "rev" },
-  uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    drill: "cost" },
+  ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => !!r.revFlag,  drill: "rev" },
+  uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => !!r.costFlag, drill: "cost" },
   fl: { title: "Financial Lock Pending", pool: "jobs", flag: (r) => !!r.finPending,                        drill: "open" },
   ol: { title: "Operation Lock Pending", pool: "jobs", flag: (r) => !!r.opsPending,                        drill: "open" },
 };

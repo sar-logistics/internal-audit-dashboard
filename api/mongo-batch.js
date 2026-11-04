@@ -1,8 +1,9 @@
 // SAR Internal Audit Dashboard — data API (Vercel serverless function), read only.
 //
-//   POST /api/mongo-batch  { dataset: "canada" | "usa", refresh? }  (signed in) -> per-job rows
+//   POST /api/mongo-batch  { dataset: "canada" | "usa" | "indonesia", refresh? }  (signed in) -> per-job rows
 //     { jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows },
-//       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows },
+//       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost,
+//                           revFlag, costFlag], rows },   revFlag / costFlag: counted in Revenue Not Billed / Cost Not Posted
 //       dataRefreshedAt: { jobs, estimatedVsActual }, builtAt }
 //     The KPI cards and the Branch › Job Owner table are worked out from these rows in the page.
 //     refresh: true skips the 5-minute cache.
@@ -18,11 +19,18 @@
 //   • Unbilled Revenue / Unposted Cost: usa_ops_etdeta charge lines of Sea / Air / Road Export and
 //     Import (lobExportImport), summed per shipment; period = ETD/ETA New. Amounts are in USD.
 //   • Jobs: usa_ops_jobs (every LOB). Period = ETD/ETA New › Job Date. Open = no Operation Lock Date.
-// Both: Financial / Operation Lock Pending = the job has no lock date.
+// SAR Indonesia — same rules as the SAR Indonesia Sea Ops dashboard (database sar-id-ops):
+//   • Jobs: th_ops_export, th_ops_import and id_ops_crosstrade. Direction from the LOB code (FES, FIA…);
+//     period = ETA (Import) or ETD, else Job Opened. Open = status not CMP / CLS and ETD (ETA for
+//     Import) more than 7 days ago.
+//   • Revenue Not Billed: the job has WIP lines with WIP > 0 and its ETD / ETA is more than 3 days
+//     ago; amount = those lines' WIP. Cost Not Posted: accrual lines ≠ 0 and ETD / ETA more than
+//     7 days ago; amount = their accrual. WIP lines are in th_ops_wip. Amounts are in IDR.
+// All: Financial / Operation Lock Pending = the job has no lock date.
 //
-// Environment: CANADA_URI (cluster holding sar-ca-ops), USA_URI (cluster holding sar-usa-ops; falls
-// back to CANADA_URI when both are on the same cluster), CA_MONGO_DB / USA_MONGO_DB to rename the
-// databases. A read-only Atlas user is enough.
+// Environment: CANADA_URI (cluster holding sar-ca-ops), USA_URI (sar-usa-ops), INDONESIA_URI
+// (sar-id-ops); USA and Indonesia fall back to CANADA_URI when they are on the same cluster.
+// CA_MONGO_DB / USA_MONGO_DB / ID_MONGO_DB rename the databases. A read-only Atlas user is enough.
 
 import { MongoClient } from "mongodb";
 import { authenticate, sendError, HttpError } from "./mongo.js";
@@ -30,6 +38,7 @@ import { authenticate, sendError, HttpError } from "./mongo.js";
 const ENTITIES = {
   canada: { envs: ["CANADA_URI", "CA_MONGO_URI"], db: process.env.CA_MONGO_DB || "sar-ca-ops" },
   usa:    { envs: ["USA_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.USA_MONGO_DB || "sar-usa-ops" },
+  indonesia: { envs: ["INDONESIA_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.ID_MONGO_DB || "sar-id-ops" },
 };
 const TTL_MS = 5 * 60 * 1000;
 
@@ -71,7 +80,10 @@ const filled = (v) => !(v === undefined || v === null || String(v).trim() === ""
 const projectionOf = (fields) => Object.fromEntries([["_id", 0], ...fields.map((f) => [f, 1])]);
 
 const JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "open", "finPending", "opsPending"];
-const EVA_JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "unbilledRevenue", "unpostedCost"];
+const EVA_JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "unbilledRevenue", "unpostedCost",
+                        "revFlag", "costFlag"];
+// Canada / USA: a job counts when its summed amount is > 0
+const evaRow = (base, rev, cost) => [...base, round2(rev), round2(cost), round2(rev) > 0, round2(cost) > 0];
 const finPendingOf = (d) => !(filled(d.financialLockDate) || filled(d.financialLock));
 const opsPendingOf = (d) => !(filled(d.operationLockDate) || filled(d.operationLock));
 
@@ -106,12 +118,11 @@ async function canadaEvaJobs(db) {
   const out = { fields: EVA_JOB_FIELDS, rows: [] };
   for (const [job, t] of byJob) {
     if (!t.direction) continue;
-    out.rows.push([
+    out.rows.push(evaRow([
       job, t.direction, t.lob2 || (t.direction === "General" ? "GEN" : "SEA " + t.direction.toUpperCase()),
       t.location || "(No Branch)", t.jobOwner || t.salesPerson || "(Unknown)",
       t.direction === "General" ? (t.jobDate || t.etdEtaNew || t.etdEta) : (t.etdEtaNew || t.etdEta || t.jobDate),
-      round2(t.rev), round2(t.cost),
-    ]);
+    ], t.rev, t.cost));
   }
   return out;
 }
@@ -203,9 +214,9 @@ async function usaEvaJobs(db) {
     t.rev  += toNum(e.unbilledRevenue);
     t.cost += toNum(e.unpostedCost);
   }
-  return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => [
-    t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew, round2(t.rev), round2(t.cost),
-  ]) };
+  return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => evaRow([
+    t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew,
+  ], t.rev, t.cost)) };
 }
 
 async function usaData(db) {
@@ -215,6 +226,63 @@ async function usaData(db) {
   ]);
   const at = (id) => { const s = stamps.find((d) => d._id === id); const t = s ? new Date(s.updatedAt) : null; return t && !isNaN(t) ? t.toISOString() : ""; };
   return { jobs, evaJobs, dataRefreshedAt: { jobs: at("lastPush_" + US_JOBS), estimatedVsActual: at("lastPush_" + US_ETDETA) } };
+}
+
+// ---------------------------------------------------------------- SAR Indonesia (sar-id-ops)
+
+const ID_JOB_COLLECTIONS = ["th_ops_export", "th_ops_import", "id_ops_crosstrade"];
+const ID_WIP = "th_ops_wip";
+const DAY = 864e5;
+const idDirection = (d) => {   // getRecordDirection in the Indonesia dashboard: 2nd letter of the LOB code
+  const c = String(d.lob || "").toUpperCase().charAt(1);
+  return c === "E" ? "Export" : c === "I" ? "Import" : (d.direction || "");
+};
+const asDate = (v) => { const d = v ? new Date(v) : null; return d && !isNaN(d) ? d : null; };
+const newestId = (docs) => docs.reduce((m, d) => {
+  const t = d._id && typeof d._id.getTimestamp === "function" ? d._id.getTimestamp().getTime() : 0;
+  return t > m ? t : m;
+}, 0);
+
+async function indonesiaData(db) {
+  const [jobDocs, wip] = await Promise.all([
+    Promise.all(ID_JOB_COLLECTIONS.map((name) => db.collection(name)
+      .find({}, { projection: { _id: 1, shipmentId: 1, lob: 1, direction: 1, jobBranch: 1, branch: 1, operator: 1, jobOwner: 1,
+                                originEtd: 1, destinationEta: 1, jobOpenedDate: 1, jobStatus: 1, operationLock: 1,
+                                operationsLockedOn: 1, financialLock: 1, financialsLockedOn: 1 } }).toArray())).then((a) => a.flat()),
+    db.collection(ID_WIP).find({}, { projection: { _id: 1, shipmentId: 1, wip: 1, accrual: 1 } }).toArray(),
+  ]);
+  // WIP > 0 lines and accrual ≠ 0 lines per shipment, as renderUnbilledRev / renderUnpostedCost build them
+  const byJob = new Map();
+  for (const w of wip) {
+    const job = String(w.shipmentId ?? "").trim();
+    if (!job) continue;
+    const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0 };
+    const wv = toNum(w.wip), av = toNum(w.accrual);
+    if (wv > 0) { t.wip += wv; t.wipLines++; }
+    if (av !== 0) { t.accrual += av; t.accLines++; }
+    byJob.set(job, t);
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cut3 = new Date(today - 3 * DAY), cut7 = new Date(today - 7 * DAY);
+  const jobs = { fields: JOB_FIELDS, rows: [] }, evaJobs = { fields: EVA_JOB_FIELDS, rows: [] };
+  for (const d of jobDocs) {
+    const job = String(d.shipmentId ?? "").trim();
+    const direction = idDirection(d);
+    const imp = direction === "Import";
+    const period = (imp ? d.destinationEta : d.originEtd) || d.jobOpenedDate || "";
+    const threshold = asDate(imp ? d.destinationEta : d.originEtd);   // thresholdDate()
+    const closed = ["CMP", "CLS"].includes(String(d.jobStatus || "").toUpperCase());
+    const base = [job, direction, String(d.lob || "").toUpperCase(), d.jobBranch || d.branch || "(No Branch)",
+                  d.operator || d.jobOwner || "(Unknown)", period];
+    jobs.rows.push([...base, !closed && !!threshold && threshold < cut7,
+                    !(filled(d.financialsLockedOn) || filled(d.financialLock)),
+                    !(filled(d.operationsLockedOn) || filled(d.operationLock))]);
+    const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0 };
+    evaJobs.rows.push([...base, round2(t.wip), round2(t.accrual),
+                       t.wipLines > 0 && !!threshold && threshold < cut3, t.accLines > 0 && !!threshold && threshold < cut7]);
+  }
+  const iso = (ms) => ms ? new Date(ms).toISOString() : "";
+  return { jobs, evaJobs, dataRefreshedAt: { jobs: iso(newestId(jobDocs)), estimatedVsActual: iso(newestId(wip)) } };
 }
 
 // ---------------------------------------------------------------- pop-up details
@@ -234,6 +302,11 @@ const US_CHARGE_FIELDS = ["shipmentId", "lob", "lobExportImport", "etdEtaNew", "
   "jobDate", "organization", "jobOwner", "location", "operationLockDate", "estimatedRevenueUsd", "bookedRevenueUsd",
   "actualRevenueUsd", "estimatedCostUsd", "bookedCostUsd", "actualCostUsd", "estimatedProfitUsd", "actualProfitUsd",
   "financialLockDate", "receivableFrom", "payableTo"];
+const ID_JOB_DETAIL_FIELDS = ["shipmentId", "jobStatus", "jobBranch", "jobDept", "operator", "salesRep", "localClientName", "mode",
+  "direction", "lob", "originEtd", "destinationEta", "jobOpenedDate", "origin", "originCtry", "destination", "destCtry", "houseRef",
+  "consolId", "vessel", "carrierName", "mblNumber", "containerNo", "consigneeName", "consignorName", "incoterm"];
+const ID_WIP_FIELDS = ["shipmentId", "chargeCode", "wip", "revenue", "accrual", "invoiceNumber", "recognized", "chargeType", "cost",
+  "lob", "etdEta", "etd", "eta", "localRef", "trans", "cont", "jobBranch", "jobDept", "jobStatus", "localClient", "operator"];
 const MAX_DETAIL_JOBS = 5000;
 
 function jobIds(body) {
@@ -247,9 +320,10 @@ const anyOf = (ids) => ({ $in: [...ids, ...ids.filter((j) => /^\d+$/.test(j)).ma
 async function jobDetails(db, entity, body) {
   const ids = jobIds(body);
   if (!ids.length) return { rows: [] };
-  const names = entity === "usa" ? [US_JOBS] : CA_JOB_COLLECTIONS;
+  const names = entity === "usa" ? [US_JOBS] : entity === "indonesia" ? ID_JOB_COLLECTIONS : CA_JOB_COLLECTIONS;
+  const fields = entity === "indonesia" ? ID_JOB_DETAIL_FIELDS : JOB_DETAIL_FIELDS;
   const rows = (await Promise.all(names.map((name) => db.collection(name)
-    .find({ shipmentId: anyOf(ids) }, { projection: projectionOf(JOB_DETAIL_FIELDS) }).toArray()))).flat();
+    .find({ shipmentId: anyOf(ids) }, { projection: projectionOf(fields) }).toArray()))).flat();
   return { rows };
 }
 
@@ -257,6 +331,10 @@ async function chargeLines(db, entity, body) {
   const ids = jobIds(body);
   if (!ids.length) return { rows: [] };
   const cost = body.kind === "cost";
+  if (entity === "indonesia") {
+    const filter = { shipmentId: anyOf(ids), ...(cost ? { accrual: { $nin: [0, null, ""] } } : { wip: { $gt: 0 } }) };
+    return { rows: await db.collection(ID_WIP).find(filter, { projection: projectionOf(ID_WIP_FIELDS) }).toArray() };
+  }
   if (entity === "usa") {
     const filter = { shipmentId: anyOf(ids), lobExportImport: { $regex: US_LOB_RE.source, $options: "i" },
                      [cost ? "unpostedCost" : "unbilledRevenue"]: { $gt: 0 } };
@@ -281,17 +359,17 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const body = req.body || {};
-  const entity = body.dataset === "canada" || body.dataset === "usa" ? body.dataset : (body.entity || "canada");
+  const entity = ENTITIES[body.dataset] ? body.dataset : (body.entity || "canada");
   try {
     await authenticate(req);
     entityOf(entity);
     if (body.dataset === "jobDetails") return res.status(200).json(await jobDetails(await getDb(entity), entity, body));
     if (body.dataset === "chargeLines") return res.status(200).json(await chargeLines(await getDb(entity), entity, body));
-    if (body.dataset !== "canada" && body.dataset !== "usa") throw new HttpError(400, "Unknown dataset");
+    if (!ENTITIES[body.dataset]) throw new HttpError(400, "Unknown dataset");
     const hit = cache.get(entity);
     if (body.refresh || !hit || Date.now() - hit.at > TTL_MS) {
       const db = await getDb(entity);
-      const data = entity === "usa" ? await usaData(db) : await canadaData(db);
+      const data = entity === "usa" ? await usaData(db) : entity === "indonesia" ? await indonesiaData(db) : await canadaData(db);
       cache.set(entity, { payload: { ...data, builtAt: new Date().toISOString() }, at: Date.now() });
     }
     return res.status(200).json(cache.get(entity).payload);
