@@ -5,7 +5,7 @@
 //       financialLock: { locked, pending }, operationLock: { locked, pending },
 //       totalJobs, dataRefreshedAt, builtAt,
 //       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows },
-//       jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open], rows } }
+//       jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows } }
 //     refresh: true skips the 5-minute cache.
 //
 // Same rules as the SAR Canada Sea Ops dashboard (its api/mongo-batch.js + index.html):
@@ -96,7 +96,7 @@ async function amountsFromEva(db) {
 // Same fields the Canada dashboard uses: branch = jobBranch › branch › location, owner = operator ›
 // jobOwner, period = periodDate › jobDate, open = isOpen (else no Operation Lock Date).
 // Direction and LOB fall back to the collection the job came from.
-const JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "open"];
+const JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "open", "finPending", "opsPending"];
 const COLLECTION_LOB = { ca_ops_export: ["Export", "SEA EXPORT"], ca_ops_import: ["Import", "SEA IMPORT"],
                          ca_ops_air_export: ["Export", "AIR EXPORT"], ca_ops_air_import: ["Import", "AIR IMPORT"],
                          ca_ops_road_export: ["Export", "ROAD EXPORT"], ca_ops_general: ["General", "GEN"] };
@@ -111,8 +111,10 @@ async function locksFromJobs(db) {
   const out = { totalJobs: docs.length, financialLock: { locked: 0, pending: 0 }, operationLock: { locked: 0, pending: 0 },
                 jobs: { fields: JOB_FIELDS, rows: [] }, jobsSyncedAt: "" };
   for (const d of docs) {
-    if (filled(d.financialLockDate) || filled(d.financialLock)) out.financialLock.locked++; else out.financialLock.pending++;
-    if (filled(d.operationLockDate) || filled(d.operationLock)) out.operationLock.locked++; else out.operationLock.pending++;
+    const finPending = !(filled(d.financialLockDate) || filled(d.financialLock));
+    const opsPending = !(filled(d.operationLockDate) || filled(d.operationLock));
+    if (finPending) out.financialLock.pending++; else out.financialLock.locked++;
+    if (opsPending) out.operationLock.pending++; else out.operationLock.locked++;
     if (d.syncedAt && String(d.syncedAt) > out.jobsSyncedAt) out.jobsSyncedAt = String(d.syncedAt);
     const [colDir, colLob] = COLLECTION_LOB[d._col];
     out.jobs.rows.push([
@@ -120,6 +122,7 @@ async function locksFromJobs(db) {
       d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
       d.periodDate || d.jobDate || "",
       d.isOpen !== undefined ? !!d.isOpen : !filled(d.operationLockDate),
+      finPending, opsPending,
     ]);
   }
   return out;

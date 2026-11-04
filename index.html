@@ -145,6 +145,28 @@
             font-weight: 700; margin-right: 10px; vertical-align: middle; }
   .bt .empty { text-align: center; color: var(--ink-faint); padding: 28px; }
 
+  /* KPI pop-up */
+  .kpi-click { cursor: pointer; transition: box-shadow .15s ease, border-color .15s ease; }
+  .kpi-click:hover, .kpi-click:focus-visible { box-shadow: 0 4px 16px rgba(15,42,77,0.12); border-color: var(--accent); outline: none; }
+  .modal { position: fixed; inset: 0; z-index: 50; background: rgba(15,25,45,0.45); display: grid; place-items: center; padding: 24px; }
+  .modal-box { background: var(--card); border-radius: 14px; width: min(1000px, 100%); max-height: 85vh; display: flex; flex-direction: column;
+               box-shadow: 0 24px 60px rgba(0,0,0,0.3); overflow: hidden; }
+  .modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .modal-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+  .modal-head .count { font-size: 13px; color: var(--ink-faint); margin-right: auto; }
+  .km-search { border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; font: inherit; font-size: 13px; min-width: 220px; }
+  .km-close { border: none; background: var(--paper); width: 32px; height: 32px; border-radius: 50%; font-size: 20px; line-height: 1;
+              color: var(--ink-soft); cursor: pointer; }
+  .km-close:hover { background: #D6534A; color: #fff; }
+  .modal-body { overflow: auto; }
+  table.kt { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .kt th { position: sticky; top: 0; background: #FAFBFD; text-align: left; padding: 10px 14px; font-size: 11.5px; font-weight: 700;
+           letter-spacing: .5px; text-transform: uppercase; color: var(--ink-faint); border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .kt td { padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .kt .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .kt tfoot td { position: sticky; bottom: 0; background: #F0F4FF; font-weight: 800; border-top: 2px solid #2C4E82; }
+  .kt .empty { text-align: center; color: var(--ink-faint); padding: 28px; }
+
   #caError { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; font-size: 13px; background: #FEF3F2; color: #B42318; }
 
   @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -235,10 +257,10 @@
     <div class="content" id="canadaContent">
       <div id="caError" class="hidden"></div>
       <div class="kpi-row">
-        <div class="kpi"><div class="label">Unbilled Revenue</div><div class="value" id="kUr">–</div><div class="delta" id="kUrSub">&nbsp;</div></div>
-        <div class="kpi stripe-teal"><div class="label">Unposted Cost</div><div class="value" id="kUc">–</div><div class="delta" id="kUcSub">&nbsp;</div></div>
-        <div class="kpi stripe-purple"><div class="label">Financial Lock Pending</div><div class="value" id="kFl">–</div></div>
-        <div class="kpi stripe-good"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
+        <div class="kpi kpi-click" data-kpi="ur" tabindex="0" role="button"><div class="label">Unbilled Revenue</div><div class="value" id="kUr">–</div><div class="delta" id="kUrSub">&nbsp;</div></div>
+        <div class="kpi stripe-teal kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Unposted Cost</div><div class="value" id="kUc">–</div><div class="delta" id="kUcSub">&nbsp;</div></div>
+        <div class="kpi stripe-purple kpi-click" data-kpi="fl" tabindex="0" role="button"><div class="label">Financial Lock Pending</div><div class="value" id="kFl">–</div></div>
+        <div class="kpi stripe-good kpi-click" data-kpi="ol" tabindex="0" role="button"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
       </div>
 
       <div class="filters">
@@ -251,11 +273,22 @@
           <h2 id="btTitle">Branch › Job Owner — Total Jobs Created</h2>
           <span class="count" id="btCount"></span>
           <button class="btn-soft" id="btExpand" type="button">» Expand All</button>
-          <button class="btn-soft" id="btCollapse" type="button">« Collapse All</button>
           <label class="switch" id="btAmountSwitch"><input type="checkbox" id="btByAmount"><span class="track"></span>View by <b id="btByLbl">Count</b></label>
         </div>
         <div class="tbl-wrap"><table class="bt"><thead id="btHead"></thead><tbody id="btBody"></tbody></table></div>
       </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="kpiModal" role="dialog" aria-modal="true" aria-labelledby="kmTitle">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="kmTitle"></h3>
+        <span class="count" id="kmCount"></span>
+        <input class="km-search" id="kmSearch" type="search" placeholder="Search job, branch, owner…" aria-label="Search">
+        <button class="km-close" id="kmClose" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body"><table class="kt"><thead id="kmHead"></thead><tbody id="kmBody"></tbody><tfoot id="kmFoot"></tfoot></table></div>
     </div>
   </div>
 </section>
@@ -372,7 +405,7 @@ const REPORTS = {
   rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue" },
   cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    amtKey: "unpostedCost" },
 };
-const bt = { jobs: [], eva: [], report: "total", byAmount: false, open: new Set() };
+const bt = { jobs: [], eva: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
 
 function parseDay(v) {
   if (!v) return null;
@@ -429,6 +462,12 @@ function setBranchData(jobs, evaJobs) {
   renderBranchTable();
 }
 
+function setExpandButton(shown) {
+  bt.shown = shown;
+  bt.allOpen = shown.length > 0 && shown.every((b) => bt.open.has(b));
+  $("btExpand").textContent = bt.allOpen ? "« Collapse All" : "» Expand All";
+}
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function renderBranchTable() {
@@ -466,10 +505,12 @@ function renderBranchTable() {
 
   $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${monthLabel(k)}</th>`).join("")}</tr>`;
   if (!flagged.length) {
+    setExpandButton([]);
     $("btBody").innerHTML = `<tr><td class="empty" colspan="${cols.length + 2}">No jobs in this period.</td></tr>`;
     return;
   }
   const sorted = [...branches].sort((a, b) => b[1].t.total - a[1].t.total);
+  setExpandButton(sorted.map(([name]) => name));
   let html = `<tr class="grand"><td>Grand Total</td>${cells(grand)}</tr>`;
   sorted.forEach(([name, b], i) => {
     const open = bt.open.has(name);
@@ -491,11 +532,63 @@ $("btBody").onclick = (e) => {
   bt.open.has(name) ? bt.open.delete(name) : bt.open.add(name);
   renderBranchTable();
 };
-$("btExpand").onclick = () => { [...bt.jobs, ...bt.eva].forEach((r) => bt.open.add(r.branch)); renderBranchTable(); };
-$("btCollapse").onclick = () => { bt.open.clear(); renderBranchTable(); };
+// One button: expands every branch, or collapses them all once they are all open
+$("btExpand").onclick = () => {
+  if (bt.allOpen) bt.open.clear(); else bt.shown.forEach((b) => bt.open.add(b));
+  renderBranchTable();
+};
 $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+
+// ============================================================ KPI pop-ups
+// Each KPI card opens the jobs behind its number (all LOBs and dates, same as the card).
+const fmtDay = (v) => { const d = parseDay(v); return d ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}` : (v || ""); };
+const KPI_VIEWS = {
+  ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue", amtLabel: "Unbilled Revenue" },
+  uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    amtKey: "unpostedCost",    amtLabel: "Unposted Cost" },
+  fl: { title: "Financial Lock Pending", pool: "jobs", flag: (r) => !!r.finPending },
+  ol: { title: "Operation Lock Pending", pool: "jobs", flag: (r) => !!r.opsPending },
+};
+const km = { rows: [], view: null };
+
+function openKpi(key) {
+  const v = KPI_VIEWS[key];
+  km.view = v;
+  km.rows = bt[v.pool].filter(v.flag)
+    .sort(v.amtKey ? (a, b) => (Number(b[v.amtKey]) || 0) - (Number(a[v.amtKey]) || 0)
+                   : (a, b) => String(a.branch).localeCompare(b.branch) || String(a.jobNo).localeCompare(b.jobNo));
+  $("kmTitle").textContent = v.title;
+  $("kmSearch").value = "";
+  $("kmHead").innerHTML = `<tr><th>#</th><th>Job No</th><th>LOB</th><th>Branch</th><th>Job Owner</th><th>Period</th>` +
+    (v.amtKey ? `<th class="num">${v.amtLabel}</th>` : "") + `</tr>`;
+  renderKpiRows();
+  $("kpiModal").classList.remove("hidden");
+  $("kmClose").focus();
+}
+
+function renderKpiRows() {
+  const v = km.view, q = $("kmSearch").value.trim().toLowerCase();
+  const rows = q ? km.rows.filter((r) => [r.jobNo, r.branch, r.jobOwner, r.lobLabel].some((x) => String(x).toLowerCase().includes(q))) : km.rows;
+  $("kmCount").textContent = q ? `${fmtInt(rows.length)} of ${fmtInt(km.rows.length)} jobs` : `${fmtInt(rows.length)} jobs`;
+  const span = v.amtKey ? 7 : 6;
+  $("kmBody").innerHTML = rows.length ? rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.jobNo)}</td><td>${esc(r.lobLabel)}</td>` +
+      `<td>${esc(r.branch)}</td><td>${esc(r.jobOwner)}</td><td>${esc(fmtDay(r.periodDate))}</td>` +
+      (v.amtKey ? `<td class="num">${fmtAmt(r[v.amtKey])}</td>` : "") + `</tr>`).join("")
+    : `<tr><td class="empty" colspan="${span}">No jobs.</td></tr>`;
+  $("kmFoot").innerHTML = v.amtKey && rows.length
+    ? `<tr><td colspan="6">Total</td><td class="num">${fmtAmt(rows.reduce((a, r) => a + (Number(r[v.amtKey]) || 0), 0))}</td></tr>` : "";
+}
+
+function closeKpi() { $("kpiModal").classList.add("hidden"); }
+document.querySelectorAll(".kpi-click").forEach((card) => {
+  card.onclick = () => openKpi(card.dataset.kpi);
+  card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openKpi(card.dataset.kpi); } };
+});
+$("kmClose").onclick = closeKpi;
+$("kpiModal").onclick = (e) => { if (e.target === $("kpiModal")) closeKpi(); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("kpiModal").classList.contains("hidden")) closeKpi(); });
+$("kmSearch").oninput = renderKpiRows;
 
 // ============================================================ company tabs
 // Only SAR Canada has data so far; the other companies show a placeholder until they are connected.
