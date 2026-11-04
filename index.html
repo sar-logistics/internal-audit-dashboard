@@ -105,6 +105,7 @@
   .kpi .value.coral { color: #B91C1C; }
   .kpi .delta.soft { color: var(--ink-soft); font-weight: 500; }
   .kpi-row.rep { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .kpi-row.rep.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi .label { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
   .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; color: var(--good); }
@@ -189,7 +190,7 @@
     .nav { padding: 8px 12px; }
     .topbar, .content { padding-left: 16px; padding-right: 16px; }
   }
-  @media (max-width: 480px) { .kpi-row, .kpi-row.rep { grid-template-columns: 1fr; } }
+  @media (max-width: 480px) { .kpi-row, .kpi-row.rep, .kpi-row.rep.two { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -283,11 +284,11 @@
         <div class="kpi stripe-orange kpi-click" data-kpi="oj" tabindex="0" role="button"><div class="label">Open Jobs</div><div class="value orange" id="kOj">–</div><div class="delta soft" id="kOjSub">&nbsp;</div></div>
         <div class="kpi stripe-coral"><div class="label">% of Such Jobs</div><div class="value coral" id="kOjPct">–</div><div class="delta soft" id="kOjPctSub">&nbsp;</div></div>
       </div>
-      <div class="kpi-row rep hidden" data-for="rev">
+      <div class="kpi-row rep two hidden" data-for="rev">
         <div class="kpi kpi-click" data-kpi="ur" tabindex="0" role="button"><div class="label">Unbilled Revenue</div><div class="value" id="kRvAmt">–</div><div class="delta soft" id="kRvAmtSub">&nbsp;</div></div>
         <div class="kpi stripe-orange kpi-click" data-kpi="ur" tabindex="0" role="button"><div class="label">Count of Unbilled Revenue</div><div class="value orange" id="kRvCnt">–</div><div class="delta soft" id="kRvCntSub">&nbsp;</div></div>
       </div>
-      <div class="kpi-row rep hidden" data-for="cost">
+      <div class="kpi-row rep two hidden" data-for="cost">
         <div class="kpi stripe-teal kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Unposted Cost</div><div class="value" id="kCsAmt">–</div><div class="delta soft" id="kCsAmtSub">&nbsp;</div></div>
         <div class="kpi stripe-orange kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Count of Unposted Cost</div><div class="value orange" id="kCsCnt">–</div><div class="delta soft" id="kCsCntSub">&nbsp;</div></div>
       </div>
