@@ -4,7 +4,8 @@
 //     { unbilledRevenue: { amount, jobs }, unpostedCost: { amount, jobs },
 //       financialLock: { locked, pending }, operationLock: { locked, pending },
 //       totalJobs, dataRefreshedAt, builtAt,
-//       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows } }
+//       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows },
+//       jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open], rows } }
 //     refresh: true skips the 5-minute cache.
 //
 // Same rules as the SAR Canada Sea Ops dashboard (its api/mongo-batch.js + index.html):
@@ -91,15 +92,35 @@ async function amountsFromEva(db) {
   return out;
 }
 
+// One row per job in the ca_ops_* collections, for the Total Jobs Created / Open Jobs tables.
+// Same fields the Canada dashboard uses: branch = jobBranch › branch › location, owner = operator ›
+// jobOwner, period = periodDate › jobDate, open = isOpen (else no Operation Lock Date).
+// Direction and LOB fall back to the collection the job came from.
+const JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "open"];
+const COLLECTION_LOB = { ca_ops_export: ["Export", "SEA EXPORT"], ca_ops_import: ["Import", "SEA IMPORT"],
+                         ca_ops_air_export: ["Export", "AIR EXPORT"], ca_ops_air_import: ["Import", "AIR IMPORT"],
+                         ca_ops_road_export: ["Export", "ROAD EXPORT"], ca_ops_general: ["General", "GEN"] };
+
 async function locksFromJobs(db) {
-  const docs = (await Promise.all(JOB_COLLECTIONS.map((name) => db.collection(name)
-    .find({}, { projection: { _id: 0, financialLockDate: 1, financialLock: 1, operationLockDate: 1, operationLock: 1, syncedAt: 1 } })
-    .toArray()))).flat();
-  const out = { totalJobs: docs.length, financialLock: { locked: 0, pending: 0 }, operationLock: { locked: 0, pending: 0 }, jobsSyncedAt: "" };
+  const perCollection = await Promise.all(JOB_COLLECTIONS.map((name) => db.collection(name)
+    .find({}, { projection: { _id: 0, financialLockDate: 1, financialLock: 1, operationLockDate: 1, operationLock: 1, syncedAt: 1,
+                              shipmentId: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1, jobOwner: 1,
+                              periodDate: 1, jobDate: 1, isOpen: 1 } })
+    .toArray().then((docs) => docs.map((d) => ({ ...d, _col: name })))));
+  const docs = perCollection.flat();
+  const out = { totalJobs: docs.length, financialLock: { locked: 0, pending: 0 }, operationLock: { locked: 0, pending: 0 },
+                jobs: { fields: JOB_FIELDS, rows: [] }, jobsSyncedAt: "" };
   for (const d of docs) {
     if (filled(d.financialLockDate) || filled(d.financialLock)) out.financialLock.locked++; else out.financialLock.pending++;
     if (filled(d.operationLockDate) || filled(d.operationLock)) out.operationLock.locked++; else out.operationLock.pending++;
     if (d.syncedAt && String(d.syncedAt) > out.jobsSyncedAt) out.jobsSyncedAt = String(d.syncedAt);
+    const [colDir, colLob] = COLLECTION_LOB[d._col];
+    out.jobs.rows.push([
+      String(d.shipmentId ?? ""), d.direction || colDir, d.lob || colLob,
+      d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
+      d.periodDate || d.jobDate || "",
+      d.isOpen !== undefined ? !!d.isOpen : !filled(d.operationLockDate),
+    ]);
   }
   return out;
 }

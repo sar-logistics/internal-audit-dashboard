@@ -224,15 +224,17 @@
       </div>
       <div class="panel">
         <div class="panel-head">
-          <h2 id="btTitle">Branch › Job Owner — Revenue Not Billed</h2>
+          <h2 id="btTitle">Branch › Job Owner — Total Jobs Created</h2>
           <span class="count" id="btCount"></span>
           <button class="btn-soft" id="btExpand" type="button">» Expand All</button>
           <button class="btn-soft" id="btCollapse" type="button">« Collapse All</button>
-          <div class="seg" role="group" aria-label="Report">
-            <button type="button" id="btRev" class="on">Revenue Not Billed</button>
-            <button type="button" id="btCost">Cost Not Posted</button>
+          <div class="seg" role="group" aria-label="Report" id="btReports">
+            <button type="button" data-report="total" class="on">Total Jobs Created</button>
+            <button type="button" data-report="open">Open Jobs</button>
+            <button type="button" data-report="rev">Revenue Not Billed</button>
+            <button type="button" data-report="cost">Cost Not Posted</button>
           </div>
-          <label class="switch"><input type="checkbox" id="btByAmount"><span class="track"></span>View by <b id="btByLbl">Count</b></label>
+          <label class="switch" id="btAmountSwitch"><input type="checkbox" id="btByAmount"><span class="track"></span>View by <b id="btByLbl">Count</b></label>
         </div>
         <div class="tbl-wrap"><table class="bt"><thead id="btHead"></thead><tbody id="btBody"></tbody></table></div>
       </div>
@@ -323,7 +325,7 @@ async function loadCanada(refresh) {
     $("kUcSub").textContent = `${fmtInt(k.unpostedCost.jobs)} jobs with unposted cost`;
     $("kFl").textContent = fmtInt(k.financialLock.pending);
     $("kOl").textContent = fmtInt(k.operationLock.pending);
-    setBranchData(k.evaJobs);
+    setBranchData(k.jobs, k.evaJobs);
     const pushed = [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop();
     $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
   } catch (e) {
@@ -338,12 +340,21 @@ async function loadCanada(refresh) {
 $("caRefresh").onclick = () => loadCanada(true);
 
 // ============================================================ Branch › Job Owner table
-// Revenue Not Billed: jobs whose summed unbilled revenue is > 0; Cost Not Posted: unposted cost > 0.
-// Columns are months of each job's period date; "total" counts every job in the range.
+// Same reports as the Canada ops dashboard. Columns are months of each job's period date.
+//   Total Jobs Created: every job in the ca_ops_* collections
+//   Open Jobs:          jobs not yet operation-locked (isOpen, else no Operation Lock Date)
+//   Revenue Not Billed: estimatedvsactual jobs whose summed unbilled revenue is > 0
+//   Cost Not Posted:    estimatedvsactual jobs whose summed unposted cost is > 0
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
 const AV_COLORS = ["#3F6E1E", "#2C4E82", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
-const bt = { jobs: [], report: "rev", byAmount: false, open: new Set() };
+const REPORTS = {
+  total: { title: "Total Jobs Created", pool: "jobs", flag: () => true,                                 count: (n) => `${fmtInt(n)} total jobs` },
+  open:  { title: "Open Jobs",          pool: "jobs", flag: (r) => !!r.open,                           count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} open` },
+  rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue" },
+  cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    amtKey: "unpostedCost" },
+};
+const bt = { jobs: [], eva: [], report: "total", byAmount: false, open: new Set() };
 
 function parseDay(v) {
   if (!v) return null;
@@ -369,17 +380,23 @@ function lobLabel(lob, direction) {
   return `${mode} ${direction}`;
 }
 
-function setBranchData(evaJobs) {
-  const f = evaJobs?.fields || [];
-  bt.jobs = (evaJobs?.rows || []).map((a) => {
+function unpack(set) {
+  const f = set?.fields || [];
+  return (set?.rows || []).map((a) => {
     const r = {}; f.forEach((k, i) => { r[k] = a[i]; });
     const d = parseDay(r.periodDate);
     r.mk = d ? monthKey(d) : null;
     r.lobLabel = lobLabel(r.lob, r.direction);
     return r;
   });
+}
+
+function setBranchData(jobs, evaJobs) {
+  bt.jobs = unpack(jobs);
+  bt.eva = unpack(evaJobs);
+  const all = [...bt.jobs, ...bt.eva];
   // Month pickers: every month that has jobs; default Jan of this year → this month
-  const keys = bt.jobs.map((r) => r.mk).filter((k) => k !== null);
+  const keys = all.map((r) => r.mk).filter((k) => k !== null);
   const now = monthKey(new Date());
   const lo = Math.min(now - (now % 12), ...keys), hi = Math.max(now, ...keys);
   const keep = (id, def) => { const v = +$(id).value; return $(id).options.length && !isNaN(v) ? v : def; };
@@ -387,7 +404,7 @@ function setBranchData(evaJobs) {
   const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${monthLabel(k)}</option>`);
   $("btFrom").innerHTML = $("btTo").innerHTML = opts.join("");
   $("btFrom").value = from; $("btTo").value = to;
-  const lobs = [...new Set(bt.jobs.map((r) => r.lobLabel))].sort();
+  const lobs = [...new Set(all.map((r) => r.lobLabel))].sort();
   const lob = $("btLob").value;
   $("btLob").innerHTML = `<option value="">All LOBs</option>` + lobs.map((l) => `<option>${l}</option>`).join("");
   $("btLob").value = lobs.includes(lob) ? lob : "";
@@ -397,20 +414,24 @@ function setBranchData(evaJobs) {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function renderBranchTable() {
+  const rep = REPORTS[bt.report];
   const from = +$("btFrom").value, to = +$("btTo").value;
   const lo = Math.min(from, to), hi = Math.max(from, to);
   const lob = $("btLob").value;
-  const amtKey = bt.report === "rev" ? "unbilledRevenue" : "unpostedCost";
-  $("btTitle").textContent = `Branch › Job Owner — ${bt.report === "rev" ? "Revenue Not Billed" : "Cost Not Posted"}`;
-  $("btByLbl").textContent = bt.byAmount ? "Amount" : "Count";
+  const byAmount = bt.byAmount && !!rep.amtKey;
+  $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
+  $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
+  $("btByLbl").textContent = byAmount ? "Amount" : "Count";
+  document.querySelectorAll("#btReports button").forEach((b) => b.classList.toggle("on", b.dataset.report === bt.report));
 
-  const inRange = bt.jobs.filter((r) => r.mk !== null && r.mk >= lo && r.mk <= hi && (!lob || r.lobLabel === lob));
-  const flagged = inRange.filter((r) => (Number(r[amtKey]) || 0) > 0);
-  $("btCount").textContent = `${fmtInt(inRange.length)} total · ${fmtInt(flagged.length)} flagged`;
+  const inRange = bt[rep.pool].filter((r) => r.mk !== null && r.mk >= lo && r.mk <= hi && (!lob || r.lobLabel === lob));
+  const flagged = inRange.filter(rep.flag);
+  $("btCount").textContent = rep.count ? rep.count(inRange.length, flagged.length)
+                                       : `${fmtInt(inRange.length)} total · ${fmtInt(flagged.length)} flagged`;
 
   const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
-  const wt = (r) => bt.byAmount ? (Number(r[amtKey]) || 0) : 1;
-  const fmt = (n) => bt.byAmount ? fmtAmt(n) : fmtInt(n);
+  const wt = (r) => byAmount ? (Number(r[rep.amtKey]) || 0) : 1;
+  const fmt = (n) => byAmount ? fmtAmt(n) : fmtInt(n);
   const blank = () => ({ total: 0, by: {} });
   const add = (t, r) => { const w = wt(r); t.total += w; t.by[r.mk] = (t.by[r.mk] || 0) + w; };
 
@@ -427,7 +448,7 @@ function renderBranchTable() {
 
   $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${monthLabel(k)}</th>`).join("")}</tr>`;
   if (!flagged.length) {
-    $("btBody").innerHTML = `<tr><td class="empty" colspan="${cols.length + 2}">No flagged jobs in this period.</td></tr>`;
+    $("btBody").innerHTML = `<tr><td class="empty" colspan="${cols.length + 2}">No jobs in this period.</td></tr>`;
     return;
   }
   const sorted = [...branches].sort((a, b) => b[1].t.total - a[1].t.total);
@@ -452,10 +473,9 @@ $("btBody").onclick = (e) => {
   bt.open.has(name) ? bt.open.delete(name) : bt.open.add(name);
   renderBranchTable();
 };
-$("btExpand").onclick = () => { bt.jobs.forEach((r) => bt.open.add(r.branch)); renderBranchTable(); };
+$("btExpand").onclick = () => { [...bt.jobs, ...bt.eva].forEach((r) => bt.open.add(r.branch)); renderBranchTable(); };
 $("btCollapse").onclick = () => { bt.open.clear(); renderBranchTable(); };
-$("btRev").onclick = () => { bt.report = "rev"; $("btRev").classList.add("on"); $("btCost").classList.remove("on"); renderBranchTable(); };
-$("btCost").onclick = () => { bt.report = "cost"; $("btCost").classList.add("on"); $("btRev").classList.remove("on"); renderBranchTable(); };
+$("btReports").onclick = (e) => { const b = e.target.closest("button[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 
