@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SAR Internal Audit</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e4e7ec;
@@ -21,15 +23,25 @@
          font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
   .hidden { display: none !important; }
 
-  /* sign-in */
-  #login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-  .card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line);
-          border-radius: 12px; padding: 32px 28px; text-align: center; }
-  .card h1 { margin: 0 0 4px; font-size: 20px; }
-  .card p { margin: 0 0 24px; color: var(--muted); font-size: 14px; }
+  /* sign-in (same look as the SAR IN Sea Export Pricing dashboard; the card stays white in dark mode) */
+  #login { min-height: 100vh; display: grid; place-items: center; padding: 16px;
+           background: linear-gradient(160deg, #1E3A8A, #0A1826 70%); }
+  #login .card { width: 100%; max-width: 380px; background: #fff; border-radius: 20px; padding: 40px 44px;
+                 text-align: center; box-shadow: 0 24px 60px rgba(0,0,0,0.3); font-family: "Plus Jakarta Sans", system-ui, sans-serif; }
+  #login .login-logo { height: 52px; margin-bottom: 18px; }
+  #login .login-badge { display: inline-flex; align-items: center; gap: 6px; background: #E1F5EA; color: #1F8A4C;
+                        font-size: 12.5px; font-weight: 700; padding: 6px 14px; border-radius: 999px; margin-bottom: 20px; }
+  #login .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #1F8A4C; }
+  #login h1 { margin: 0 0 10px; font-size: 21px; font-weight: 800; color: #1C2136; }
+  #login p { margin: 0 0 22px; color: #4B536E; font-size: 13.5px; line-height: 1.5; }
   #gsiButton { display: flex; justify-content: center; min-height: 44px; }
-  #loginMsg { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
-              background: var(--danger-bg); color: var(--danger); text-align: left; }
+  #loginMsg { margin: 14px 0 0; color: #C24A2E; font-size: 12.5px; }
+  #login .login-divider { display: flex; align-items: center; gap: 12px; margin: 22px 0 16px; font-size: 10.5px;
+                          font-weight: 700; letter-spacing: 0.6px; color: #9299B3; text-transform: uppercase; }
+  #login .login-divider::before, #login .login-divider::after { content: ""; flex: 1; height: 1px; background: #E3E7F0; }
+  #login .login-footer { font-size: 12.5px; color: #4B536E; line-height: 1.6; }
+  #login .login-footer b { color: #1C2136; }
+  @media (max-width: 420px) { #login .card { padding: 32px 22px; } }
 
   /* signed in */
   header { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
@@ -47,10 +59,14 @@
 
 <section id="login">
   <div class="card">
+    <img class="login-logo" src="sar-logo.png" alt="SAR - Connecting Continents">
+    <div class="login-badge"><span class="status-dot"></span>Live Dashboard</div>
     <h1>SAR Internal Audit</h1>
-    <p>Sign in with your SAR Google account.</p>
+    <p>Sign in with your SAR Google Workspace account to access the SAR Internal Audit Dashboard.</p>
     <div id="gsiButton"></div>
     <div id="loginMsg" class="hidden"></div>
+    <div class="login-divider">Restricted Access</div>
+    <div class="login-footer">Access is restricted to authorised SAR team members.<br>Contact <b>Admin</b> to request access.</div>
   </div>
 </section>
 
