@@ -247,6 +247,7 @@
         <label for="btFrom">From</label><select class="select" id="btFrom"></select>
         <label for="btTo">To</label><select class="select" id="btTo"></select>
         <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
+        <select class="select" id="btCur" aria-label="Currency" title="1 USD = 1.4 CAD"><option>USD</option><option>CAD</option></select>
       </div>
       <div class="topbar-actions">
         <button class="btn-refresh" id="caRefresh" type="button">
@@ -358,6 +359,10 @@ async function start() {
 
 // ============================================================ Canada KPIs
 const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// SAR Canada amounts are in CAD; they are shown in USD by default (1 USD = 1.4 CAD), or in CAD.
+const CAD_PER_USD = 1.4;
+const currency = () => $("btCur").value;
+const fmtMoney = (cad) => `${currency()} ${fmtAmt(currency() === "USD" ? (Number(cad) || 0) / CAD_PER_USD : cad)}`;
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {
   const d = iso ? new Date(iso) : null;
@@ -482,9 +487,9 @@ function renderKpis() {
   const eva = inFilters("eva"), jobs = inFilters("jobs");
   const sum = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
   const ur = eva.filter(KPI_VIEWS.ur.flag), uc = eva.filter(KPI_VIEWS.uc.flag);
-  $("kUr").textContent = fmtAmt(sum(ur, "unbilledRevenue"));
+  $("kUr").textContent = fmtMoney(sum(ur, "unbilledRevenue"));
   $("kUrSub").textContent = `${fmtInt(ur.length)} jobs with unbilled revenue`;
-  $("kUc").textContent = fmtAmt(sum(uc, "unpostedCost"));
+  $("kUc").textContent = fmtMoney(sum(uc, "unpostedCost"));
   $("kUcSub").textContent = `${fmtInt(uc.length)} jobs with unposted cost`;
   $("kFl").textContent = fmtInt(jobs.filter(KPI_VIEWS.fl.flag).length);
   $("kOl").textContent = fmtInt(jobs.filter(KPI_VIEWS.ol.flag).length);
@@ -497,7 +502,7 @@ function renderBranchTable() {
   const byAmount = bt.byAmount && !!rep.amtKey;
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
-  $("btByLbl").textContent = byAmount ? "Amount" : "Count";
+  $("btByLbl").textContent = byAmount ? `Amount (${currency()})` : "Count";
   document.querySelectorAll("#btReports [data-report]").forEach((b) => b.classList.toggle("active", b.dataset.report === bt.report));
 
   const inRange = inFilters(rep.pool);
@@ -507,7 +512,7 @@ function renderBranchTable() {
 
   const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
   const wt = (r) => byAmount ? (Number(r[rep.amtKey]) || 0) : 1;
-  const fmt = (n) => byAmount ? fmtAmt(n) : fmtInt(n);
+  const fmt = (n) => byAmount ? fmtAmt(currency() === "USD" ? n / CAD_PER_USD : n) : fmtInt(n);
   const blank = () => ({ total: 0, by: {} });
   const add = (t, r) => { const w = wt(r); t.total += w; t.by[r.mk] = (t.by[r.mk] || 0) + w; };
 
@@ -559,6 +564,7 @@ $("btExpand").onclick = () => {
 $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+$("btCur").onchange = () => { renderBranchTable(); if (!$("kpiModal").classList.contains("hidden")) renderKpiRows(); };
 
 // ============================================================ KPI pop-ups
 // Each KPI card opens the jobs behind its number, for the months and LOB picked in the top bar.
@@ -593,10 +599,10 @@ function renderKpiRows() {
   const span = v.amtKey ? 7 : 6;
   $("kmBody").innerHTML = rows.length ? rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.jobNo)}</td><td>${esc(r.lobLabel)}</td>` +
       `<td>${esc(r.branch)}</td><td>${esc(r.jobOwner)}</td><td>${esc(fmtDay(r.periodDate))}</td>` +
-      (v.amtKey ? `<td class="num">${fmtAmt(r[v.amtKey])}</td>` : "") + `</tr>`).join("")
+      (v.amtKey ? `<td class="num">${fmtMoney(r[v.amtKey])}</td>` : "") + `</tr>`).join("")
     : `<tr><td class="empty" colspan="${span}">No jobs.</td></tr>`;
   $("kmFoot").innerHTML = v.amtKey && rows.length
-    ? `<tr><td colspan="6">Total</td><td class="num">${fmtAmt(rows.reduce((a, r) => a + (Number(r[v.amtKey]) || 0), 0))}</td></tr>` : "";
+    ? `<tr><td colspan="6">Total</td><td class="num">${fmtMoney(rows.reduce((a, r) => a + (Number(r[v.amtKey]) || 0), 0))}</td></tr>` : "";
 }
 
 function closeKpi() { $("kpiModal").classList.add("hidden"); }
