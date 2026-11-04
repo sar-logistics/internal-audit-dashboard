@@ -95,6 +95,52 @@
   .kpi .label { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
   .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; color: var(--good); }
+  /* Branch › Job Owner table (same layout as the Canada ops dashboard's Unbilled Revenue page) */
+  .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .filters label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
+  .select { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font: inherit;
+            font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .panel-head { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .panel-head h2 { margin: 0 auto 0 0; font-size: 15px; font-weight: 600; color: var(--ink-soft); }
+  .panel-head .count { font-size: 13px; color: var(--ink-faint); }
+  .btn-soft { display: flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+              padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer; }
+  .btn-soft:hover { border-color: var(--accent); color: var(--ink); }
+  .seg { display: flex; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+  .seg button { border: none; background: none; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 12.5px;
+                font-weight: 600; color: var(--ink-soft); cursor: pointer; }
+  .seg button.on { background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff; }
+  .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); cursor: pointer; user-select: none; }
+  .switch input { display: none; }
+  .switch .track { width: 40px; height: 22px; border-radius: 999px; background: #E3E7F0; position: relative; transition: background .15s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%;
+                          background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: left .15s; }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { left: 21px; }
+  .switch b { color: var(--ink); }
+  .tbl-wrap { overflow-x: auto; }
+  table.bt { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .bt th { text-align: right; padding: 12px 16px; font-size: 11.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+           color: var(--ink-faint); border-bottom: 1px solid var(--line); white-space: nowrap; background: #FAFBFD; }
+  .bt th:first-child, .bt td:first-child { text-align: left; position: sticky; left: 0; background: inherit; min-width: 240px; }
+  .bt td { text-align: right; padding: 11px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .bt td.gt, .bt th.gt { border-right: 1px solid var(--line); font-weight: 700; }
+  .bt td.zero { color: #C5CBDA; }
+  .bt tr { background: var(--card); }
+  .bt tr.grand { background: #F0F4FF; }
+  .bt tr.grand td { font-weight: 800; border-bottom: 2px solid #2C4E82; }
+  .bt tr.grand td:first-child { color: #1E3A6E; text-transform: uppercase; letter-spacing: .4px; }
+  .bt tr.branch { cursor: pointer; }
+  .bt tr.branch td:first-child { font-weight: 600; }
+  .bt tr.branch:hover { background: #F7F9FC; }
+  .bt tr.owner td:first-child { padding-left: 76px; color: var(--ink-soft); }
+  .bt .caret { display: inline-block; width: 14px; color: var(--ink-faint); font-size: 10px; transition: transform .15s; }
+  .bt tr.open .caret { transform: rotate(90deg); }
+  .bt .av { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 11px;
+            font-weight: 700; margin-right: 10px; vertical-align: middle; }
+  .bt .empty { text-align: center; color: var(--ink-faint); padding: 28px; }
+
   #caError { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; font-size: 13px; background: #FEF3F2; color: #B42318; }
 
   @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -169,6 +215,26 @@
         <div class="kpi stripe-teal"><div class="label">Unposted Cost</div><div class="value" id="kUc">–</div><div class="delta" id="kUcSub">&nbsp;</div></div>
         <div class="kpi stripe-purple"><div class="label">Financial Lock Pending</div><div class="value" id="kFl">–</div></div>
         <div class="kpi stripe-good"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
+      </div>
+
+      <div class="filters">
+        <label for="btFrom">From</label><select class="select" id="btFrom"></select>
+        <label for="btTo">To</label><select class="select" id="btTo"></select>
+        <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 id="btTitle">Branch › Job Owner — Revenue Not Billed</h2>
+          <span class="count" id="btCount"></span>
+          <button class="btn-soft" id="btExpand" type="button">» Expand All</button>
+          <button class="btn-soft" id="btCollapse" type="button">« Collapse All</button>
+          <div class="seg" role="group" aria-label="Report">
+            <button type="button" id="btRev" class="on">Revenue Not Billed</button>
+            <button type="button" id="btCost">Cost Not Posted</button>
+          </div>
+          <label class="switch"><input type="checkbox" id="btByAmount"><span class="track"></span>View by <b id="btByLbl">Count</b></label>
+        </div>
+        <div class="tbl-wrap"><table class="bt"><thead id="btHead"></thead><tbody id="btBody"></tbody></table></div>
       </div>
     </div>
   </div>
@@ -257,6 +323,7 @@ async function loadCanada(refresh) {
     $("kUcSub").textContent = `${fmtInt(k.unpostedCost.jobs)} jobs with unposted cost`;
     $("kFl").textContent = fmtInt(k.financialLock.pending);
     $("kOl").textContent = fmtInt(k.operationLock.pending);
+    setBranchData(k.evaJobs);
     const pushed = [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop();
     $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
   } catch (e) {
@@ -269,6 +336,128 @@ async function loadCanada(refresh) {
   }
 }
 $("caRefresh").onclick = () => loadCanada(true);
+
+// ============================================================ Branch › Job Owner table
+// Revenue Not Billed: jobs whose summed unbilled revenue is > 0; Cost Not Posted: unposted cost > 0.
+// Columns are months of each job's period date; "total" counts every job in the range.
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
+const AV_COLORS = ["#3F6E1E", "#2C4E82", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
+const bt = { jobs: [], report: "rev", byAmount: false, open: new Set() };
+
+function parseDay(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[-\s/]([A-Za-z]{3})[A-Za-z]*[-\s/](\d{2,4})/);          // 15-Jun-2026
+  if (m && MON_IDX[m[2].toLowerCase()] !== undefined) {
+    const y = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+    return new Date(y, MON_IDX[m[2].toLowerCase()], +m[1]);
+  }
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);                                      // 15/06/2026
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+const monthKey = (d) => d.getFullYear() * 12 + d.getMonth();
+const monthLabel = (k) => `${MONTHS[k % 12]} '${String(Math.floor(k / 12)).slice(2)}`;
+
+function lobLabel(lob, direction) {
+  const c = String(lob || "").trim().toUpperCase();
+  if (direction === "General" || /^GEN/.test(c)) return "General";
+  const mode = c.includes(" ") ? (c.includes("AIR") ? "Air" : c.includes("ROAD") ? "Road" : "Sea")
+                               : (c.endsWith("A") ? "Air" : c.endsWith("R") ? "Road" : "Sea");
+  return `${mode} ${direction}`;
+}
+
+function setBranchData(evaJobs) {
+  const f = evaJobs?.fields || [];
+  bt.jobs = (evaJobs?.rows || []).map((a) => {
+    const r = {}; f.forEach((k, i) => { r[k] = a[i]; });
+    const d = parseDay(r.periodDate);
+    r.mk = d ? monthKey(d) : null;
+    r.lobLabel = lobLabel(r.lob, r.direction);
+    return r;
+  });
+  // Month pickers: every month that has jobs; default Jan of this year → this month
+  const keys = bt.jobs.map((r) => r.mk).filter((k) => k !== null);
+  const now = monthKey(new Date());
+  const lo = Math.min(now - (now % 12), ...keys), hi = Math.max(now, ...keys);
+  const keep = (id, def) => { const v = +$(id).value; return $(id).options.length && !isNaN(v) ? v : def; };
+  const from = keep("btFrom", now - (now % 12)), to = keep("btTo", now);
+  const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${monthLabel(k)}</option>`);
+  $("btFrom").innerHTML = $("btTo").innerHTML = opts.join("");
+  $("btFrom").value = from; $("btTo").value = to;
+  const lobs = [...new Set(bt.jobs.map((r) => r.lobLabel))].sort();
+  const lob = $("btLob").value;
+  $("btLob").innerHTML = `<option value="">All LOBs</option>` + lobs.map((l) => `<option>${l}</option>`).join("");
+  $("btLob").value = lobs.includes(lob) ? lob : "";
+  renderBranchTable();
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function renderBranchTable() {
+  const from = +$("btFrom").value, to = +$("btTo").value;
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  const lob = $("btLob").value;
+  const amtKey = bt.report === "rev" ? "unbilledRevenue" : "unpostedCost";
+  $("btTitle").textContent = `Branch › Job Owner — ${bt.report === "rev" ? "Revenue Not Billed" : "Cost Not Posted"}`;
+  $("btByLbl").textContent = bt.byAmount ? "Amount" : "Count";
+
+  const inRange = bt.jobs.filter((r) => r.mk !== null && r.mk >= lo && r.mk <= hi && (!lob || r.lobLabel === lob));
+  const flagged = inRange.filter((r) => (Number(r[amtKey]) || 0) > 0);
+  $("btCount").textContent = `${fmtInt(inRange.length)} total · ${fmtInt(flagged.length)} flagged`;
+
+  const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
+  const wt = (r) => bt.byAmount ? (Number(r[amtKey]) || 0) : 1;
+  const fmt = (n) => bt.byAmount ? fmtAmt(n) : fmtInt(n);
+  const blank = () => ({ total: 0, by: {} });
+  const add = (t, r) => { const w = wt(r); t.total += w; t.by[r.mk] = (t.by[r.mk] || 0) + w; };
+
+  const grand = blank(), branches = new Map();
+  for (const r of flagged) {
+    add(grand, r);
+    if (!branches.has(r.branch)) branches.set(r.branch, { t: blank(), owners: new Map() });
+    const b = branches.get(r.branch); add(b.t, r);
+    if (!b.owners.has(r.jobOwner)) b.owners.set(r.jobOwner, blank());
+    add(b.owners.get(r.jobOwner), r);
+  }
+  const cells = (t) => `<td class="gt">${fmt(t.total)}</td>` +
+    cols.map((k) => t.by[k] ? `<td>${fmt(t.by[k])}</td>` : `<td class="zero">—</td>`).join("");
+
+  $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${monthLabel(k)}</th>`).join("")}</tr>`;
+  if (!flagged.length) {
+    $("btBody").innerHTML = `<tr><td class="empty" colspan="${cols.length + 2}">No flagged jobs in this period.</td></tr>`;
+    return;
+  }
+  const sorted = [...branches].sort((a, b) => b[1].t.total - a[1].t.total);
+  let html = `<tr class="grand"><td>Grand Total</td>${cells(grand)}</tr>`;
+  sorted.forEach(([name, b], i) => {
+    const open = bt.open.has(name);
+    html += `<tr class="branch${open ? " open" : ""}" data-branch="${esc(name)}"><td>` +
+      `<span class="av" style="background:${AV_COLORS[i % AV_COLORS.length]}">${esc(name.replace(/[^A-Za-z0-9]/g, "").charAt(0).toUpperCase() || "?")}</span>` +
+      `<span class="caret">▶</span> ${esc(name)}</td>${cells(b.t)}</tr>`;
+    if (open) {
+      [...b.owners].sort((x, y) => y[1].total - x[1].total)
+        .forEach(([owner, t]) => { html += `<tr class="owner"><td>${esc(owner)}</td>${cells(t)}</tr>`; });
+    }
+  });
+  $("btBody").innerHTML = html;
+}
+
+$("btBody").onclick = (e) => {
+  const row = e.target.closest("tr.branch");
+  if (!row) return;
+  const name = row.dataset.branch;
+  bt.open.has(name) ? bt.open.delete(name) : bt.open.add(name);
+  renderBranchTable();
+};
+$("btExpand").onclick = () => { bt.jobs.forEach((r) => bt.open.add(r.branch)); renderBranchTable(); };
+$("btCollapse").onclick = () => { bt.open.clear(); renderBranchTable(); };
+$("btRev").onclick = () => { bt.report = "rev"; $("btRev").classList.add("on"); $("btCost").classList.remove("on"); renderBranchTable(); };
+$("btCost").onclick = () => { bt.report = "cost"; $("btCost").classList.add("on"); $("btRev").classList.remove("on"); renderBranchTable(); };
+$("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
+["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 

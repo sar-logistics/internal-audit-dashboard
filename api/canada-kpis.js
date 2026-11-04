@@ -2,11 +2,13 @@
 //
 //   { unbilledRevenue: { amount, jobs }, unpostedCost: { amount, jobs },
 //     financialLock: { locked, pending }, operationLock: { locked, pending },
-//     totalJobs, dataRefreshedAt, builtAt }
+//     totalJobs, dataRefreshedAt, builtAt,
+//     evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows } }
 //
 // Same rules as the SAR Canada Sea Ops dashboard (its api/mongo-batch.js + index.html):
 //   • Unbilled Revenue / Unposted Cost: estimatedvsactual charge lines summed per job (jobNo);
-//     a job counts when its sum is > 0, and the amount is the total of those jobs.
+//     a job counts when its sum is > 0, and the amount is the total of those jobs. Jobs with no
+//     direction are left out, as on the Canada dashboard's Unbilled Revenue / Unposted Cost pages.
 //     Cost uses unpostedCost, falling back to the Canada sheet's unbilledCost.
 //   • Financial / Operation Lock: jobs in the ca_ops_* job collections that have a lock date
 //     (financialLockDate / financialLock, operationLockDate / operationLock); pending = blank.
@@ -44,22 +46,43 @@ const toNum = (v) => { const n = typeof v === "number" ? v : parseFloat(String(v
 const round2 = (n) => Math.round(n * 100) / 100;
 const filled = (v) => !(v === undefined || v === null || String(v).trim() === "");
 
+const evaDirection = (lob) => { const u = String(lob || "").toUpperCase(); return /^GEN/.test(u) ? "General" : /EXP/.test(u) ? "Export" : /IMP/.test(u) ? "Import" : ""; };
+
+// One row per estimatedvsactual job, as the Canada dashboard builds them (evaJobSummaries in its
+// mongo-batch.js): jobs without a direction are left out, and the period date is Job Date for
+// General jobs, otherwise ETD/ETA New › ETD/ETA › Job Date.
+const EVA_JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "unbilledRevenue", "unpostedCost"];
+
 async function amountsFromEva(db) {
   const rows = await db.collection(EVA_COLLECTION)
-    .find({}, { projection: { _id: 0, jobNo: 1, unbilledRevenue: 1, unpostedCost: 1, unbilledCost: 1 } }).toArray();
+    .find({}, { projection: { _id: 0, jobNo: 1, unbilledRevenue: 1, unpostedCost: 1, unbilledCost: 1, lob: 1, lob2: 1, direction: 1,
+                              etdEtaNew: 1, etdEta: 1, jobDate: 1, location: 1, jobOwner: 1, salesPerson: 1 } }).toArray();
   const byJob = new Map();
   for (const e of rows) {
     const job = String(e.jobNo ?? "").trim();
     if (!job) continue;
-    const t = byJob.get(job) || { rev: 0, cost: 0 };
+    let t = byJob.get(job);
+    if (!t) {
+      t = { rev: 0, cost: 0, lob2: e.lob2 || "", direction: e.direction || evaDirection(e.lob2 || e.lob),
+            etdEtaNew: e.etdEtaNew || "", etdEta: e.etdEta || "", jobDate: e.jobDate || "",
+            location: e.location || "", jobOwner: e.jobOwner || "", salesPerson: e.salesPerson || "" };
+      byJob.set(job, t);
+    }
     t.rev  += toNum(e.unbilledRevenue);
     t.cost += toNum(filled(e.unpostedCost) ? e.unpostedCost : e.unbilledCost);
-    byJob.set(job, t);
   }
-  const out = { unbilledRevenue: { amount: 0, jobs: 0 }, unpostedCost: { amount: 0, jobs: 0 } };
-  for (const t of byJob.values()) {
-    if (t.rev  > 0) { out.unbilledRevenue.amount += t.rev;  out.unbilledRevenue.jobs++; }
-    if (t.cost > 0) { out.unpostedCost.amount    += t.cost; out.unpostedCost.jobs++; }
+  const out = { unbilledRevenue: { amount: 0, jobs: 0 }, unpostedCost: { amount: 0, jobs: 0 }, evaJobs: { fields: EVA_JOB_FIELDS, rows: [] } };
+  for (const [job, t] of byJob) {
+    if (!t.direction) continue;
+    const rev = round2(t.rev), cost = round2(t.cost);
+    if (rev  > 0) { out.unbilledRevenue.amount += rev;  out.unbilledRevenue.jobs++; }
+    if (cost > 0) { out.unpostedCost.amount    += cost; out.unpostedCost.jobs++; }
+    out.evaJobs.rows.push([
+      job, t.direction, t.lob2 || (t.direction === "General" ? "GEN" : "SEA " + t.direction.toUpperCase()),
+      t.location || "(No Branch)", t.jobOwner || t.salesPerson || "(Unknown)",
+      t.direction === "General" ? (t.jobDate || t.etdEtaNew || t.etdEta) : (t.etdEtaNew || t.etdEta || t.jobDate),
+      rev, cost,
+    ]);
   }
   out.unbilledRevenue.amount = round2(out.unbilledRevenue.amount);
   out.unpostedCost.amount    = round2(out.unpostedCost.amount);
