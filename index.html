@@ -134,6 +134,8 @@
   .bt td { text-align: right; padding: 11px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .bt td.gt, .bt th.gt { border-right: 1px solid var(--line); font-weight: 700; }
   .bt td.zero { color: #C5CBDA; }
+  .bt td.drill { cursor: pointer; }
+  .bt td.drill:hover { color: var(--accent); text-decoration: underline; }
   .bt tr { background: var(--card); }
   .bt tr.grand { background: #F0F4FF; }
   .bt tr.grand td { font-weight: 800; border-bottom: 2px solid #2C4E82; }
@@ -413,7 +415,7 @@ const REPORTS = {
   rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue" },
   cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    amtKey: "unpostedCost" },
 };
-const bt = { jobs: [], eva: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
+const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
 
 function parseDay(v) {
   if (!v) return null;
@@ -533,8 +535,10 @@ function renderBranchTable() {
     if (!b.owners.has(r.jobOwner)) b.owners.set(r.jobOwner, blank());
     add(b.owners.get(r.jobOwner), r);
   }
-  const cells = (t) => `<td class="gt">${fmt(t.total)}</td>` +
-    cols.map((k) => t.by[k] ? `<td>${fmt(t.by[k])}</td>` : `<td class="zero">—</td>`).join("");
+  bt.flagged = flagged;
+  const at = (b, o, m) => `data-b="${esc(b)}" data-o="${esc(o)}" data-m="${m}" title="Show jobs"`;
+  const cells = (t, b = "", o = "") => `<td class="gt drill" ${at(b, o, "")}>${fmt(t.total)}</td>` +
+    cols.map((k) => t.by[k] ? `<td class="drill" ${at(b, o, k)}>${fmt(t.by[k])}</td>` : `<td class="zero">—</td>`).join("");
 
   $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${monthLabel(k)}</th>`).join("")}</tr>`;
   if (!flagged.length) {
@@ -549,16 +553,18 @@ function renderBranchTable() {
     const open = bt.open.has(name);
     html += `<tr class="branch${open ? " open" : ""}" data-branch="${esc(name)}"><td>` +
       `<span class="av" style="background:${AV_COLORS[i % AV_COLORS.length]}">${esc(name.replace(/[^A-Za-z0-9]/g, "").charAt(0).toUpperCase() || "?")}</span>` +
-      `<span class="caret">▶</span> ${esc(name)}</td>${cells(b.t)}</tr>`;
+      `<span class="caret">▶</span> ${esc(name)}</td>${cells(b.t, name)}</tr>`;
     if (open) {
       [...b.owners].sort((x, y) => y[1].total - x[1].total)
-        .forEach(([owner, t]) => { html += `<tr class="owner"><td>${esc(owner)}</td>${cells(t)}</tr>`; });
+        .forEach(([owner, t]) => { html += `<tr class="owner"><td>${esc(owner)}</td>${cells(t, name, owner)}</tr>`; });
     }
   });
   $("btBody").innerHTML = html;
 }
 
 $("btBody").onclick = (e) => {
+  const cell = e.target.closest("td[data-m]");
+  if (cell) return openCell(cell.dataset.b, cell.dataset.o, cell.dataset.m);
   const row = e.target.closest("tr.branch");
   if (!row) return;
   const name = row.dataset.branch;
@@ -588,8 +594,9 @@ $("btRate").onchange = () => {
   redrawMoney();
 };
 
-// ============================================================ KPI pop-ups
-// Each KPI card opens the jobs behind its number, for the months and LOB picked in the top bar.
+// ============================================================ pop-ups
+// Each KPI card, and each number in the table, opens the jobs behind it, for the months and LOB
+// picked in the top bar.
 const fmtDay = (v) => { const d = parseDay(v); return d ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}` : (v || ""); };
 const KPI_VIEWS = {
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue", amtLabel: "Unbilled Revenue" },
@@ -601,11 +608,26 @@ const km = { rows: [], view: null };
 
 function openKpi(key) {
   const v = KPI_VIEWS[key];
+  openDrill(v, inFilters(v.pool).filter(v.flag), filterLabel());
+}
+
+// A number in the Branch › Job Owner table: the jobs counted in that cell
+// (b = branch, o = job owner, m = month key; empty means all of them).
+function openCell(b, o, m) {
+  const rep = REPORTS[bt.report];
+  const rows = bt.flagged.filter((r) => (!b || r.branch === b) && (!o || r.jobOwner === o) && (!m || r.mk === +m));
+  const where = [b || "All branches", o].filter(Boolean).join(" › ");
+  const { lob } = filterState();
+  openDrill({ title: rep.title, amtKey: rep.amtKey, amtLabel: rep.title },
+            rows, `${where} · ${m ? monthLabel(+m) : filterLabel().split(" · ")[0]} · ${lob || "All LOBs"}`);
+}
+
+function openDrill(v, rows, subtitle) {
   km.view = v;
-  km.rows = inFilters(v.pool).filter(v.flag)
+  km.rows = rows.slice()
     .sort(v.amtKey ? (a, b) => (Number(b[v.amtKey]) || 0) - (Number(a[v.amtKey]) || 0)
                    : (a, b) => String(a.branch).localeCompare(b.branch) || String(a.jobNo).localeCompare(b.jobNo));
-  $("kmTitle").textContent = `${v.title} — ${filterLabel()}`;
+  $("kmTitle").textContent = `${v.title} — ${subtitle}`;
   $("kmSearch").value = "";
   $("kmHead").innerHTML = `<tr><th>#</th><th>Job No</th><th>LOB</th><th>Branch</th><th>Job Owner</th><th>Period</th>` +
     (v.amtKey ? `<th class="num">${v.amtLabel}</th>` : "") + `</tr>`;
@@ -617,7 +639,8 @@ function openKpi(key) {
 function renderKpiRows() {
   const v = km.view, q = $("kmSearch").value.trim().toLowerCase();
   const rows = q ? km.rows.filter((r) => [r.jobNo, r.branch, r.jobOwner, r.lobLabel].some((x) => String(x).toLowerCase().includes(q))) : km.rows;
-  $("kmCount").textContent = q ? `${fmtInt(rows.length)} of ${fmtInt(km.rows.length)} jobs` : `${fmtInt(rows.length)} jobs`;
+  const jobs = (n) => `${fmtInt(n)} ${n === 1 ? "job" : "jobs"}`;
+  $("kmCount").textContent = q ? `${fmtInt(rows.length)} of ${jobs(km.rows.length)}` : jobs(rows.length);
   const span = v.amtKey ? 7 : 6;
   $("kmBody").innerHTML = rows.length ? rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.jobNo)}</td><td>${esc(r.lobLabel)}</td>` +
       `<td>${esc(r.branch)}</td><td>${esc(r.jobOwner)}</td><td>${esc(fmtDay(r.periodDate))}</td>` +
