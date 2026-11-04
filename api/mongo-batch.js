@@ -1,9 +1,11 @@
-// POST /api/canada-kpis  (signed in) → Canada KPIs from the Canada Sea Ops database (read only)
+// SAR Internal Audit Dashboard — data API (Vercel serverless function), read only.
 //
-//   { unbilledRevenue: { amount, jobs }, unpostedCost: { amount, jobs },
-//     financialLock: { locked, pending }, operationLock: { locked, pending },
-//     totalJobs, dataRefreshedAt, builtAt,
-//     evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows } }
+//   POST /api/mongo-batch  { dataset: "canada", refresh? }  (signed in) -> Canada KPIs + per-job rows
+//     { unbilledRevenue: { amount, jobs }, unpostedCost: { amount, jobs },
+//       financialLock: { locked, pending }, operationLock: { locked, pending },
+//       totalJobs, dataRefreshedAt, builtAt,
+//       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows } }
+//     refresh: true skips the 5-minute cache.
 //
 // Same rules as the SAR Canada Sea Ops dashboard (its api/mongo-batch.js + index.html):
 //   • Unbilled Revenue / Unposted Cost: estimatedvsactual charge lines summed per job (jobNo);
@@ -17,7 +19,7 @@
 //              Atlas user is enough), CA_MONGO_DB (default "sar-ca-ops").
 
 import { MongoClient } from "mongodb";
-import { authenticate, sendError, HttpError } from "./_auth.js";
+import { authenticate, sendError, HttpError } from "./mongo.js";
 
 const DB_NAME = process.env.CA_MONGO_DB || "sar-ca-ops";
 const JOB_COLLECTIONS = ["ca_ops_export", "ca_ops_import", "ca_ops_air_export", "ca_ops_air_import",
@@ -109,7 +111,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
     await authenticate(req);
-    const force = !!(req.body && req.body.refresh);
+    const { dataset, refresh } = req.body || {};
+    if (dataset !== "canada") throw new HttpError(400, "Unknown dataset");
+    const force = !!refresh;
     if (force || !cache.payload || Date.now() - cache.at > TTL_MS) {
       const db = await getDb();
       const [amounts, locks, evaLast] = await Promise.all([

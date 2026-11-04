@@ -1,7 +1,11 @@
-// SAR Internal Audit Dashboard — Google sign-in check shared by the API routes.
+// SAR Internal Audit Dashboard — sign-in API (Vercel serverless function).
 //
-// The browser signs in with Google (OAuth client in Google Cloud project for the audit
-// dashboard) and sends "Authorization: Bearer <Google ID token>" on every API call.
+//   GET  /api/mongo?config=1        -> { googleClientId }                 (public; the client ID is not a secret)
+//   POST /api/mongo  { dataset: "me" } -> { email, name, picture, role }  (signed in)
+//
+// The browser signs in with Google (OAuth client in Google Cloud project sar-group-internal-audit)
+// and sends "Authorization: Bearer <Google ID token>" on every call. api/mongo-batch.js uses the
+// same check (authenticate) for the data it returns.
 // Environment: GOOGLE_CLIENT_ID (optional, overrides the default below),
 //              ALLOWED_DOMAINS (default sarlogisolutions.com), ADMIN_EMAILS (comma-separated).
 
@@ -58,4 +62,17 @@ export function sendError(res, err) {
   const known = err instanceof HttpError;
   if (!known || err.status >= 500) console.error(err);
   return res.status(known ? err.status : 500).json({ error: known ? err.message : "Server error", code: err.code });
+}
+
+export default async function handler(req, res) {
+  res.setHeader("Cache-Control", "no-store");
+  if (req.method === "GET" && req.query && req.query.config) return res.status(200).json({ googleClientId: GOOGLE_CLIENT_ID });
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  try {
+    const { dataset } = req.body || {};
+    if (dataset === "me") return res.status(200).json(await authenticate(req));
+    throw new HttpError(400, "Unknown request");
+  } catch (err) {
+    return sendError(res, err);
+  }
 }
