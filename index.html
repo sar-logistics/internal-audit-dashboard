@@ -95,13 +95,18 @@
               color: var(--ink-soft); font-size: 14px; }
 
   /* KPI cards */
-  .kpi-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
   .kpi { background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 12px; padding: 16px 18px; }
   .kpi.stripe-teal { border-top-color: var(--teal); }
   .kpi.stripe-purple { border-top-color: var(--purple); }
   .kpi.stripe-good { border-top-color: var(--good); }
   .kpi.stripe-ink { border-top-color: var(--sidebar); }
+  .kpi.stripe-orange { border-top-color: #EA580C; }
   .kpi.stripe-coral { border-top-color: var(--coral); }
+  .kpi .value.orange { color: #EA580C; }
+  .kpi .value.coral { color: #B91C1C; }
+  .kpi .delta.soft { color: var(--ink-soft); font-weight: 500; }
+  .kpi-row.rep { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi .label { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
   .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; color: var(--good); }
@@ -179,8 +184,6 @@
 
   #caError { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; font-size: 13px; background: #FEF3F2; color: #B42318; }
 
-  @media (min-width: 1401px) { .kpi .value { font-size: 20px; } }
-  @media (max-width: 1400px) { .kpi-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 860px) {
     #app { flex-direction: column; }
@@ -188,7 +191,7 @@
     .nav { padding: 8px 12px; }
     .topbar, .content { padding-left: 16px; padding-right: 16px; }
   }
-  @media (max-width: 480px) { .kpi-row { grid-template-columns: 1fr; } }
+  @media (max-width: 480px) { .kpi-row, .kpi-row.rep { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -276,12 +279,17 @@
     <div class="content" id="canadaContent">
       <div id="caError" class="hidden"></div>
       <div class="kpi-row">
-        <div class="kpi stripe-ink kpi-click" data-kpi="tj" tabindex="0" role="button"><div class="label">Total Jobs Created</div><div class="value" id="kTj">–</div></div>
-        <div class="kpi stripe-coral kpi-click" data-kpi="oj" tabindex="0" role="button"><div class="label">Open Jobs</div><div class="value" id="kOj">–</div></div>
         <div class="kpi kpi-click" data-kpi="ur" tabindex="0" role="button"><div class="label">Unbilled Revenue</div><div class="value" id="kUr">–</div><div class="delta" id="kUrSub">&nbsp;</div></div>
         <div class="kpi stripe-teal kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Unposted Cost</div><div class="value" id="kUc">–</div><div class="delta" id="kUcSub">&nbsp;</div></div>
         <div class="kpi stripe-purple kpi-click" data-kpi="fl" tabindex="0" role="button"><div class="label">Financial Lock Pending</div><div class="value" id="kFl">–</div></div>
         <div class="kpi stripe-good kpi-click" data-kpi="ol" tabindex="0" role="button"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
+      </div>
+
+      <!-- Open Jobs report only, as in the CA ops dashboard (Total Jobs Created has no cards of its own) -->
+      <div class="kpi-row rep hidden" id="repKpis">
+        <div class="kpi stripe-ink kpi-click" data-kpi="tj" tabindex="0" role="button"><div class="label">Total Jobs</div><div class="value" id="kTj">–</div><div class="delta soft" id="kTjSub">&nbsp;</div></div>
+        <div class="kpi stripe-orange kpi-click" data-kpi="oj" tabindex="0" role="button"><div class="label">Open Jobs</div><div class="value orange" id="kOj">–</div><div class="delta soft" id="kOjSub">&nbsp;</div></div>
+        <div class="kpi stripe-coral"><div class="label">% of Such Jobs</div><div class="value coral" id="kOjPct">–</div><div class="delta soft" id="kOjPctSub">&nbsp;</div></div>
       </div>
 
       <div class="panel">
@@ -378,8 +386,8 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
-  "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500 },   // as the Indonesia ops dashboard
-  "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5 },    // as the Thailand ops dashboard
+  "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS" },   // as the Indonesia ops dashboard
+  "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS" },    // as the Thailand ops dashboard
 };
 let company = "SAR Canada";
 const ent = () => ENTITIES[company];
@@ -538,8 +546,16 @@ function renderKpis() {
   $("kUrSub").textContent = `${fmtInt(ur.length)} jobs with unbilled revenue`;
   $("kUc").textContent = fmtMoney(sum(uc, "unpostedCost"));
   $("kUcSub").textContent = `${fmtInt(uc.length)} jobs with unposted cost`;
+  const open = jobs.filter(KPI_VIEWS.oj.flag).length;
+  const { lo, hi } = filterState();
+  const fullMonth = (k) => `${MONTHS[k % 12]} ${Math.floor(k / 12)}`;
+  $("repKpis").classList.toggle("hidden", bt.report !== "open");
   $("kTj").textContent = fmtInt(jobs.length);
-  $("kOj").textContent = fmtInt(jobs.filter(KPI_VIEWS.oj.flag).length);
+  $("kTjSub").textContent = `${fullMonth(lo)} → ${fullMonth(hi)}`;
+  $("kOj").textContent = fmtInt(open);
+  $("kOjSub").textContent = ent().openNote || "Not yet operation-locked";
+  $("kOjPct").textContent = jobs.length ? `${(open / jobs.length * 100).toFixed(1)}%` : "–";
+  $("kOjPctSub").textContent = `${fmtInt(open)} of ${fmtInt(jobs.length)} job${jobs.length === 1 ? "" : "s"}`;
   $("kFl").textContent = fmtInt(jobs.filter(KPI_VIEWS.fl.flag).length);
   $("kOl").textContent = fmtInt(jobs.filter(KPI_VIEWS.ol.flag).length);
 }
