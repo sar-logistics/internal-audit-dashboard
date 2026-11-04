@@ -167,8 +167,8 @@
       <div class="kpi-row">
         <div class="kpi"><div class="label">Unbilled Revenue</div><div class="value" id="kUr">–</div><div class="delta" id="kUrSub">&nbsp;</div></div>
         <div class="kpi stripe-teal"><div class="label">Unposted Cost</div><div class="value" id="kUc">–</div><div class="delta" id="kUcSub">&nbsp;</div></div>
-        <div class="kpi stripe-purple"><div class="label">Financial Lock Pending</div><div class="value" id="kFl">–</div><div class="delta" id="kFlSub">&nbsp;</div></div>
-        <div class="kpi stripe-good"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div><div class="delta" id="kOlSub">&nbsp;</div></div>
+        <div class="kpi stripe-purple"><div class="label">Financial Lock Pending</div><div class="value" id="kFl">–</div></div>
+        <div class="kpi stripe-good"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
       </div>
     </div>
   </div>
@@ -256,9 +256,7 @@ async function loadCanada(refresh) {
     $("kUc").textContent = fmtAmt(k.unpostedCost.amount);
     $("kUcSub").textContent = `${fmtInt(k.unpostedCost.jobs)} jobs with unposted cost`;
     $("kFl").textContent = fmtInt(k.financialLock.pending);
-    $("kFlSub").textContent = `of ${fmtInt(k.totalJobs)} jobs not financially locked`;
     $("kOl").textContent = fmtInt(k.operationLock.pending);
-    $("kOlSub").textContent = `of ${fmtInt(k.totalJobs)} jobs not operation locked`;
     const pushed = [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop();
     $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
   } catch (e) {
