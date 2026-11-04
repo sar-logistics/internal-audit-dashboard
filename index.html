@@ -370,12 +370,6 @@ async function loadCanada(refresh) {
   $("caError").classList.add("hidden");
   try {
     const k = await api("/api/mongo-batch", { dataset: "canada", refresh: !!refresh });
-    $("kUr").textContent = fmtAmt(k.unbilledRevenue.amount);
-    $("kUrSub").textContent = `${fmtInt(k.unbilledRevenue.jobs)} jobs with unbilled revenue`;
-    $("kUc").textContent = fmtAmt(k.unpostedCost.amount);
-    $("kUcSub").textContent = `${fmtInt(k.unpostedCost.jobs)} jobs with unposted cost`;
-    $("kFl").textContent = fmtInt(k.financialLock.pending);
-    $("kOl").textContent = fmtInt(k.operationLock.pending);
     setBranchData(k.jobs, k.evaJobs);
     const pushed = [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop();
     $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
@@ -470,18 +464,43 @@ function setExpandButton(shown) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-function renderBranchTable() {
-  const rep = REPORTS[bt.report];
+// The From / To months and LOB in the top bar apply to the KPI cards, their pop-ups and the table.
+function filterState() {
   const from = +$("btFrom").value, to = +$("btTo").value;
-  const lo = Math.min(from, to), hi = Math.max(from, to);
-  const lob = $("btLob").value;
+  return { lo: Math.min(from, to), hi: Math.max(from, to), lob: $("btLob").value };
+}
+function inFilters(pool) {
+  const { lo, hi, lob } = filterState();
+  return bt[pool].filter((r) => r.mk !== null && r.mk >= lo && r.mk <= hi && (!lob || r.lobLabel === lob));
+}
+function filterLabel() {
+  const { lo, hi, lob } = filterState();
+  return `${monthLabel(lo)}${hi !== lo ? " – " + monthLabel(hi) : ""} · ${lob || "All LOBs"}`;
+}
+
+function renderKpis() {
+  const eva = inFilters("eva"), jobs = inFilters("jobs");
+  const sum = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+  const ur = eva.filter(KPI_VIEWS.ur.flag), uc = eva.filter(KPI_VIEWS.uc.flag);
+  $("kUr").textContent = fmtAmt(sum(ur, "unbilledRevenue"));
+  $("kUrSub").textContent = `${fmtInt(ur.length)} jobs with unbilled revenue`;
+  $("kUc").textContent = fmtAmt(sum(uc, "unpostedCost"));
+  $("kUcSub").textContent = `${fmtInt(uc.length)} jobs with unposted cost`;
+  $("kFl").textContent = fmtInt(jobs.filter(KPI_VIEWS.fl.flag).length);
+  $("kOl").textContent = fmtInt(jobs.filter(KPI_VIEWS.ol.flag).length);
+}
+
+function renderBranchTable() {
+  renderKpis();
+  const rep = REPORTS[bt.report];
+  const { lo, hi, lob } = filterState();
   const byAmount = bt.byAmount && !!rep.amtKey;
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
   $("btByLbl").textContent = byAmount ? "Amount" : "Count";
   document.querySelectorAll("#btReports [data-report]").forEach((b) => b.classList.toggle("active", b.dataset.report === bt.report));
 
-  const inRange = bt[rep.pool].filter((r) => r.mk !== null && r.mk >= lo && r.mk <= hi && (!lob || r.lobLabel === lob));
+  const inRange = inFilters(rep.pool);
   const flagged = inRange.filter(rep.flag);
   $("btCount").textContent = rep.count ? rep.count(inRange.length, flagged.length)
                                        : `${fmtInt(inRange.length)} total · ${fmtInt(flagged.length)} flagged`;
@@ -542,7 +561,7 @@ $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranch
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 
 // ============================================================ KPI pop-ups
-// Each KPI card opens the jobs behind its number (all LOBs and dates, same as the card).
+// Each KPI card opens the jobs behind its number, for the months and LOB picked in the top bar.
 const fmtDay = (v) => { const d = parseDay(v); return d ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}` : (v || ""); };
 const KPI_VIEWS = {
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue", amtLabel: "Unbilled Revenue" },
@@ -555,10 +574,10 @@ const km = { rows: [], view: null };
 function openKpi(key) {
   const v = KPI_VIEWS[key];
   km.view = v;
-  km.rows = bt[v.pool].filter(v.flag)
+  km.rows = inFilters(v.pool).filter(v.flag)
     .sort(v.amtKey ? (a, b) => (Number(b[v.amtKey]) || 0) - (Number(a[v.amtKey]) || 0)
                    : (a, b) => String(a.branch).localeCompare(b.branch) || String(a.jobNo).localeCompare(b.jobNo));
-  $("kmTitle").textContent = v.title;
+  $("kmTitle").textContent = `${v.title} — ${filterLabel()}`;
   $("kmSearch").value = "";
   $("kmHead").innerHTML = `<tr><th>#</th><th>Job No</th><th>LOB</th><th>Branch</th><th>Job Owner</th><th>Period</th>` +
     (v.amtKey ? `<th class="num">${v.amtLabel}</th>` : "") + `</tr>`;
