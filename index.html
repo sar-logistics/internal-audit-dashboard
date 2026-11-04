@@ -845,13 +845,16 @@ function renderKpiRows() {
   $("kmBody").innerHTML = rows.length
     ? rows.map((r, i) => `<tr><td>${i + 1}</td>${d.cols.map((c) => `<td class="${c.num ? "num" : ""}">${cellText(c, r)}</td>`).join("")}</tr>`).join("")
     : `<tr><td class="empty" colspan="${d.cols.length + 1}">No jobs.</td></tr>`;
-  if (d.amtKey && rows.length) {
-    const total = rows.reduce((a, r) => a + (Number(r[d.amtKey]) || 0), 0);
-    $("kmFoot").innerHTML = `<tr><td></td>${d.cols.map((c, i) => i === 0 ? "<td>Total</td>"
-      : `<td class="${c.num ? "num" : ""}">${c.key === d.amtKey ? fmtMoney(total) : ""}</td>`).join("")}</tr>`;
-  } else {
-    $("kmFoot").innerHTML = "";
-  }
+  // Grand Total row: every amount column summed over the rows shown (search applied), as in the CA ops detail view
+  const sumCol = (c) => {
+    let sum = 0, any = false;
+    rows.forEach((r) => { const v = parseFloat(r[c.key]); if (!isNaN(v)) { sum += v; any = true; } });
+    return any ? fmtAmt(toShown(sum)) : "";
+  };
+  $("kmFoot").innerHTML = rows.length && d.cols.some((c) => c.num)
+    ? `<tr><td></td>${d.cols.map((c, i) => i === 0 ? "<td>Grand Total</td>"
+      : `<td class="${c.num ? "num" : ""}">${c.num ? sumCol(c) : ""}</td>`).join("")}</tr>`
+    : "";
 }
 
 function closeKpi() { km.req++; $("kpiModal").classList.add("hidden"); }
