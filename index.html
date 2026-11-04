@@ -98,8 +98,6 @@
   .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
   .kpi { background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 12px; padding: 16px 18px; }
   .kpi.stripe-teal { border-top-color: var(--teal); }
-  .kpi.stripe-purple { border-top-color: var(--purple); }
-  .kpi.stripe-good { border-top-color: var(--good); }
   .kpi.stripe-ink { border-top-color: var(--sidebar); }
   .kpi.stripe-orange { border-top-color: #EA580C; }
   .kpi.stripe-coral { border-top-color: var(--coral); }
@@ -278,12 +276,6 @@
     <div class="content hidden" id="coEmpty"><div class="co-empty" id="coEmptyText"></div></div>
     <div class="content" id="canadaContent">
       <div id="caError" class="hidden"></div>
-      <div class="kpi-row">
-        <div class="kpi kpi-click" data-kpi="ur" tabindex="0" role="button"><div class="label">Unbilled Revenue</div><div class="value" id="kUr">–</div><div class="delta" id="kUrSub">&nbsp;</div></div>
-        <div class="kpi stripe-teal kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Unposted Cost</div><div class="value" id="kUc">–</div><div class="delta" id="kUcSub">&nbsp;</div></div>
-        <div class="kpi stripe-purple kpi-click" data-kpi="fl" tabindex="0" role="button"><div class="label">Financial Lock Pending</div><div class="value" id="kFl">–</div></div>
-        <div class="kpi stripe-good kpi-click" data-kpi="ol" tabindex="0" role="button"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
-      </div>
 
       <!-- Cards for the report picked in the sidebar, as in the CA ops dashboard (Total Jobs Created has none) -->
       <div class="kpi-row rep hidden" id="repKpis" data-for="open">
@@ -550,10 +542,6 @@ function renderKpis() {
   const eva = inFilters("eva"), jobs = inFilters("jobs");
   const sum = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
   const ur = eva.filter(KPI_VIEWS.ur.flag), uc = eva.filter(KPI_VIEWS.uc.flag);
-  $("kUr").textContent = fmtMoney(sum(ur, "unbilledRevenue"));
-  $("kUrSub").textContent = `${fmtInt(ur.length)} jobs with unbilled revenue`;
-  $("kUc").textContent = fmtMoney(sum(uc, "unpostedCost"));
-  $("kUcSub").textContent = `${fmtInt(uc.length)} jobs with unposted cost`;
   const open = jobs.filter(KPI_VIEWS.oj.flag).length;
   const { lo, hi } = filterState();
   const fullMonth = (k) => `${MONTHS[k % 12]} ${Math.floor(k / 12)}`;
@@ -573,8 +561,6 @@ function renderKpis() {
   $("kCsAmtSub").textContent = period;
   $("kCsCnt").textContent = fmtInt(uc.length);
   $("kCsCntSub").textContent = ent().costNote || "Unposted Cost ≠ 0";
-  $("kFl").textContent = fmtInt(jobs.filter(KPI_VIEWS.fl.flag).length);
-  $("kOl").textContent = fmtInt(jobs.filter(KPI_VIEWS.ol.flag).length);
 }
 
 function renderBranchTable() {
@@ -786,8 +772,6 @@ const KPI_VIEWS = {
   oj: { title: "Open Jobs",              pool: "jobs", flag: (r) => !!r.open,     drill: "open" },
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => !!r.revFlag,  drill: "rev" },
   uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => !!r.costFlag, drill: "cost" },
-  fl: { title: "Financial Lock Pending", pool: "jobs", flag: (r) => !!r.finPending,                        drill: "open" },
-  ol: { title: "Operation Lock Pending", pool: "jobs", flag: (r) => !!r.opsPending,                        drill: "open" },
 };
 const km = { rows: [], drill: null, req: 0 };
 
