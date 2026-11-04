@@ -7,6 +7,8 @@
 //       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows },
 //       jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows } }
 //     refresh: true skips the 5-minute cache.
+//   POST /api/mongo-batch  { dataset: "jobDetails", jobNos }        -> { rows }  job records for a pop-up
+//   POST /api/mongo-batch  { dataset: "chargeLines", jobNos, kind } -> { rows }  kind "rev" | "cost": charge lines > 0
 //
 // Same rules as the SAR Canada Sea Ops dashboard (its api/mongo-batch.js + index.html):
 //   • Unbilled Revenue / Unposted Cost: estimatedvsactual charge lines summed per job (jobNo);
@@ -128,6 +130,51 @@ async function locksFromJobs(db) {
   return out;
 }
 
+// Detail rows for the pop-ups, fetched only when one is opened (same columns as the Canada
+// dashboard's drill-downs):
+//   jobDetails: the job records themselves (DV_COLS_TOTAL_JOBS / DV_COLS_OPEN_JOBS fields)
+//   chargeLines: estimatedvsactual charge lines with a positive unbilled revenue / unposted cost
+const JOB_DETAIL_FIELDS = ["shipmentId", "etdEtaNew", "periodDate", "location", "jobBranch", "branch", "jobOwner", "operator",
+  "salesPerson", "customer", "cargoType", "etdLoadingPort", "etaDischarge", "jobDate", "loadingPort", "originPortCountry",
+  "dischargePort", "destinationCountry", "houseNo", "consolNo", "carrierNumber", "carrier", "masterNo", "consignee", "shipper",
+  "toiIncoTerms", "lob", "direction"];
+const CHARGE_FIELDS = ["jobNo", "lob", "lob2", "etdEtaNew", "etdEta", "charge", "unbilledRevenue", "unpostedCost", "unbilledCost",
+  "jobDate", "receivableFrom", "payableTo", "organization", "jobOwner", "salesPerson", "location", "operationLockDate",
+  "estimatedRevenue", "bookedRevenue", "actualRevenue", "estimatedCost", "bookedCost", "actualCost", "estimatedProfit",
+  "actualProfit", "financialLockDate"];
+const MAX_DETAIL_JOBS = 5000;
+const projectionOf = (fields) => Object.fromEntries([["_id", 0], ...fields.map((f) => [f, 1])]);
+
+function jobIds(body) {
+  const ids = [...new Set((Array.isArray(body.jobNos) ? body.jobNos : []).map((j) => String(j ?? "").trim()).filter(Boolean))];
+  if (ids.length > MAX_DETAIL_JOBS) throw new HttpError(400, `Too many jobs (${ids.length}); narrow the months or LOB.`);
+  return ids;
+}
+// Job numbers may be stored as text or as numbers: match both
+const anyOf = (ids) => ({ $in: [...ids, ...ids.filter((j) => /^\d+$/.test(j)).map(Number)] });
+
+async function jobDetails(db, body) {
+  const ids = jobIds(body);
+  if (!ids.length) return { rows: [] };
+  const rows = (await Promise.all(JOB_COLLECTIONS.map((name) => db.collection(name)
+    .find({ shipmentId: anyOf(ids) }, { projection: projectionOf(JOB_DETAIL_FIELDS) }).toArray()))).flat();
+  return { rows };
+}
+
+async function chargeLines(db, body) {
+  const ids = jobIds(body);
+  if (!ids.length) return { rows: [] };
+  const filter = body.kind === "cost"
+    ? { jobNo: anyOf(ids), $or: [{ unpostedCost: { $gt: 0 } }, { unbilledCost: { $gt: 0 } }] }
+    : { jobNo: anyOf(ids), unbilledRevenue: { $gt: 0 } };
+  const rows = await db.collection(EVA_COLLECTION).find(filter, { projection: projectionOf(CHARGE_FIELDS) }).toArray();
+  for (const c of rows) {
+    // Canada sheet naming: unbilledCost is the unposted cost
+    if (!filled(c.unpostedCost)) c.unpostedCost = c.unbilledCost;
+  }
+  return { rows };
+}
+
 let cache = { payload: null, at: 0 };
 
 export default async function handler(req, res) {
@@ -135,7 +182,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
     await authenticate(req);
-    const { dataset, refresh } = req.body || {};
+    const body = req.body || {};
+    const { dataset, refresh } = body;
+    if (dataset === "jobDetails") return res.status(200).json(await jobDetails(await getDb(), body));
+    if (dataset === "chargeLines") return res.status(200).json(await chargeLines(await getDb(), body));
     if (dataset !== "canada") throw new HttpError(400, "Unknown dataset");
     const force = !!refresh;
     if (force || !cache.payload || Date.now() - cache.at > TTL_MS) {

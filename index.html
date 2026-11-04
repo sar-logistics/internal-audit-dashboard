@@ -154,7 +154,7 @@
   .kpi-click { cursor: pointer; transition: box-shadow .15s ease, border-color .15s ease; }
   .kpi-click:hover, .kpi-click:focus-visible { box-shadow: 0 4px 16px rgba(15,42,77,0.12); border-color: var(--accent); outline: none; }
   .modal { position: fixed; inset: 0; z-index: 50; background: rgba(15,25,45,0.45); display: grid; place-items: center; padding: 24px; }
-  .modal-box { background: var(--card); border-radius: 14px; width: min(1000px, 100%); max-height: 85vh; display: flex; flex-direction: column;
+  .modal-box { background: var(--card); border-radius: 14px; width: min(1400px, 100%); max-height: 85vh; display: flex; flex-direction: column;
                box-shadow: 0 24px 60px rgba(0,0,0,0.3); overflow: hidden; }
   .modal-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .modal-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
@@ -169,6 +169,9 @@
            letter-spacing: .5px; text-transform: uppercase; color: var(--ink-faint); border-bottom: 1px solid var(--line); white-space: nowrap; }
   .kt td { padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .kt .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .kt th:nth-child(2), .kt td:nth-child(2) { position: sticky; left: 0; background: var(--card); z-index: 1; font-weight: 600; }
+  .kt th:nth-child(2) { background: #FAFBFD; z-index: 2; }
+  .kt tfoot td:nth-child(2) { background: #F0F4FF; }
   .kt tfoot td { position: sticky; bottom: 0; background: #F0F4FF; font-weight: 800; border-top: 2px solid #2C4E82; }
   .kt .empty { text-align: center; color: var(--ink-faint); padding: 28px; }
 
@@ -582,7 +585,10 @@ $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranch
 function redrawMoney() {
   $("btFx").classList.toggle("hidden", currency() !== "USD");
   renderBranchTable();
-  if (!$("kpiModal").classList.contains("hidden")) renderKpiRows();
+  if (!$("kpiModal").classList.contains("hidden") && km.drill) {
+    $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${currency()})` : ""}</th>`).join("")}</tr>`;
+    renderKpiRows();
+  }
 }
 $("btCur").onchange = redrawMoney;
 $("btRate").value = cadPerUsd.toFixed(2);
@@ -596,19 +602,66 @@ $("btRate").onchange = () => {
 
 // ============================================================ pop-ups
 // Each KPI card, and each number in the table, opens the jobs behind it, for the months and LOB
-// picked in the top bar.
+// picked in the top bar. The columns are the Canada ops dashboard's drill-down columns; the detail
+// rows are fetched from api/mongo-batch.js when the pop-up opens.
 const fmtDay = (v) => { const d = parseDay(v); return d ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}` : (v || ""); };
-const KPI_VIEWS = {
-  ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, amtKey: "unbilledRevenue", amtLabel: "Unbilled Revenue" },
-  uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    amtKey: "unpostedCost",    amtLabel: "Unposted Cost" },
-  fl: { title: "Financial Lock Pending", pool: "jobs", flag: (r) => !!r.finPending },
-  ol: { title: "Operation Lock Pending", pool: "jobs", flag: (r) => !!r.opsPending },
+const COLS_TOTAL_JOBS = [
+  { key: "shipmentId", label: "Shipment No" }, { key: "etdEtaNew", label: "ETD/ETA New", date: true },
+  { key: "location", label: "Location" }, { key: "jobOwner", label: "Job Owner" }, { key: "salesPerson", label: "Sales Person" },
+  { key: "customer", label: "Customer" }, { key: "cargoType", label: "Cargo Type" },
+  { key: "etdLoadingPort", label: "ETD Loading Port", date: true }, { key: "etaDischarge", label: "ETA Discharge", date: true },
+  { key: "jobDate", label: "Job Date", date: true }, { key: "loadingPort", label: "Loading Port" },
+  { key: "originPortCountry", label: "Origin Port Country" }, { key: "dischargePort", label: "Discharge Port" },
+  { key: "destinationCountry", label: "Destination Country" }, { key: "houseNo", label: "House No." },
+  { key: "consolNo", label: "Consol No." }, { key: "carrierNumber", label: "Carrier Number" }, { key: "carrier", label: "Carrier" },
+  { key: "masterNo", label: "Master No." }, { key: "consignee", label: "Consignee" }, { key: "shipper", label: "Shipper" },
+  { key: "toiIncoTerms", label: "TOI/Inco Terms" },
+];
+const COLS_OPEN_JOBS = [
+  { key: "shipmentId", label: "Shipment No" }, { key: "etdEtaNew", label: "ETD/ETA New", date: true },
+  { key: "location", label: "Location" }, { key: "jobOwner", label: "Job Owner" }, { key: "customer", label: "Customer" },
+  { key: "etdLoadingPort", label: "ETD Loading Port", date: true }, { key: "jobDate", label: "Job Date", date: true },
+  { key: "cargoType", label: "Cargo Type" }, { key: "loadingPort", label: "Loading Port" },
+  { key: "dischargePort", label: "Discharge Port" }, { key: "consolNo", label: "Consol No." },
+  { key: "carrierNumber", label: "Carrier Number" }, { key: "masterNo", label: "Master No." }, { key: "houseNo", label: "House No." },
+  { key: "consignee", label: "Consignee" }, { key: "shipper", label: "Shipper" },
+];
+const EVA_TAIL = [
+  { key: "jobDate", label: "Job Date", date: true }, { key: "receivableFrom", label: "Receivable From" },
+  { key: "payableTo", label: "Payable To" }, { key: "organization", label: "Organization" }, { key: "jobOwner", label: "Job Owner" },
+  { key: "operationLockDate", label: "Operation Lock Date", date: true },
+];
+const EVA_REV_AMTS = ["estimatedRevenue:Estimated Revenue", "bookedRevenue:Booked Revenue", "actualRevenue:Actual Revenue",
+  "estimatedCost:Estimated Cost", "bookedCost:Booked Cost", "actualCost:Actual Cost"];
+const EVA_COST_AMTS = ["estimatedCost:Estimated Cost", "bookedCost:Booked Cost", "actualCost:Actual Cost",
+  "estimatedRevenue:Estimated Revenue", "bookedRevenue:Booked Revenue", "actualRevenue:Actual Revenue"];
+const evaCols = (amtKey, amtLabel, amts) => [
+  { key: "shipmentId", label: "Job No." }, { key: "etdEtaNew", label: "ETD/ETA New", date: true }, { key: "charge", label: "Charge" },
+  { key: amtKey, label: amtLabel, num: true }, ...EVA_TAIL,
+  ...[...amts, "estimatedProfit:Estimated Profit", "actualProfit:Actual Profit"].map((x) => { const [key, label] = x.split(":"); return { key, label, num: true }; }),
+  { key: "financialLockDate", label: "Financial Lock Date", date: true },
+];
+const COLS_EVA_REV = evaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS);
+const COLS_EVA_COST = evaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS);
+
+// kind: "jobs" = job records, "rev" / "cost" = charge lines
+const DRILLS = {
+  total: { kind: "jobs", cols: COLS_TOTAL_JOBS },
+  open:  { kind: "jobs", cols: COLS_OPEN_JOBS },
+  rev:   { kind: "rev",  cols: COLS_EVA_REV,  amtKey: "unbilledRevenue" },
+  cost:  { kind: "cost", cols: COLS_EVA_COST, amtKey: "unpostedCost" },
 };
-const km = { rows: [], view: null };
+const KPI_VIEWS = {
+  ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, drill: DRILLS.rev },
+  uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    drill: DRILLS.cost },
+  fl: { title: "Financial Lock Pending", pool: "jobs", flag: (r) => !!r.finPending,                        drill: DRILLS.open },
+  ol: { title: "Operation Lock Pending", pool: "jobs", flag: (r) => !!r.opsPending,                        drill: DRILLS.open },
+};
+const km = { rows: [], drill: null, req: 0 };
 
 function openKpi(key) {
   const v = KPI_VIEWS[key];
-  openDrill(v, inFilters(v.pool).filter(v.flag), filterLabel());
+  openDrill(v.title, v.drill, inFilters(v.pool).filter(v.flag), filterLabel());
 }
 
 // A number in the Branch › Job Owner table: the jobs counted in that cell
@@ -618,39 +671,71 @@ function openCell(b, o, m) {
   const rows = bt.flagged.filter((r) => (!b || r.branch === b) && (!o || r.jobOwner === o) && (!m || r.mk === +m));
   const where = [b || "All branches", o].filter(Boolean).join(" › ");
   const { lob } = filterState();
-  openDrill({ title: rep.title, amtKey: rep.amtKey, amtLabel: rep.title },
-            rows, `${where} · ${m ? monthLabel(+m) : filterLabel().split(" · ")[0]} · ${lob || "All LOBs"}`);
+  openDrill(rep.title, DRILLS[bt.report], rows, `${where} · ${m ? monthLabel(+m) : filterLabel().split(" · ")[0]} · ${lob || "All LOBs"}`);
 }
 
-function openDrill(v, rows, subtitle) {
-  km.view = v;
-  km.rows = rows.slice()
-    .sort(v.amtKey ? (a, b) => (Number(b[v.amtKey]) || 0) - (Number(a[v.amtKey]) || 0)
-                   : (a, b) => String(a.branch).localeCompare(b.branch) || String(a.jobNo).localeCompare(b.jobNo));
-  $("kmTitle").textContent = `${v.title} — ${subtitle}`;
+async function openDrill(title, drill, summaryRows, subtitle) {
+  const req = ++km.req;
+  km.drill = drill;
+  km.rows = [];
+  $("kmTitle").textContent = `${title} — ${subtitle}`;
   $("kmSearch").value = "";
-  $("kmHead").innerHTML = `<tr><th>#</th><th>Job No</th><th>LOB</th><th>Branch</th><th>Job Owner</th><th>Period</th>` +
-    (v.amtKey ? `<th class="num">${v.amtLabel}</th>` : "") + `</tr>`;
-  renderKpiRows();
+  $("kmHead").innerHTML = `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${currency()})` : ""}</th>`).join("")}</tr>`;
+  $("kmBody").innerHTML = `<tr><td class="empty" colspan="${drill.cols.length + 1}">Loading…</td></tr>`;
+  $("kmFoot").innerHTML = "";
+  $("kmCount").textContent = "";
   $("kpiModal").classList.remove("hidden");
   $("kmClose").focus();
+
+  const jobNos = [...new Set(summaryRows.map((r) => r.jobNo))];
+  if (!jobNos.length) { if (req === km.req) renderKpiRows(); return; }
+  try {
+    const { rows } = drill.kind === "jobs"
+      ? await api("/api/mongo-batch", { dataset: "jobDetails", jobNos })
+      : await api("/api/mongo-batch", { dataset: "chargeLines", jobNos, kind: drill.kind });
+    if (req !== km.req) return;   // another pop-up was opened meanwhile
+    km.rows = rows.map((c) => drill.kind === "jobs"
+      ? { ...c, shipmentId: String(c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.periodDate || "",
+          location: c.location || c.jobBranch || c.branch || "", jobOwner: c.jobOwner || c.operator || "" }
+      : { ...c, shipmentId: String(c.jobNo ?? ""), etdEtaNew: c.etdEtaNew || c.etdEta || c.jobDate || "" });
+    km.rows.sort(drill.amtKey
+      ? (a, b) => a.shipmentId.localeCompare(b.shipmentId) || String(a.charge || "").localeCompare(String(b.charge || ""))
+      : (a, b) => String(a.location).localeCompare(String(b.location)) || a.shipmentId.localeCompare(b.shipmentId));
+    renderKpiRows();
+  } catch (e) {
+    if (req !== km.req || ["signed out", "no access"].includes(e.message)) return;
+    $("kmBody").innerHTML = `<tr><td class="empty" colspan="${drill.cols.length + 1}">Couldn't load the details: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function cellText(c, r) {
+  const v = r[c.key];
+  if (c.date) return esc(fmtDay(v));
+  if (c.num) return v === undefined || v === null || v === "" ? "" : fmtAmt(toShown(v));
+  return esc(v ?? "");
 }
 
 function renderKpiRows() {
-  const v = km.view, q = $("kmSearch").value.trim().toLowerCase();
-  const rows = q ? km.rows.filter((r) => [r.jobNo, r.branch, r.jobOwner, r.lobLabel].some((x) => String(x).toLowerCase().includes(q))) : km.rows;
+  const d = km.drill, q = $("kmSearch").value.trim().toLowerCase();
+  if (!d) return;
+  const rows = q ? km.rows.filter((r) => d.cols.some((c) => String(r[c.key] ?? "").toLowerCase().includes(q))) : km.rows;
   const jobs = (n) => `${fmtInt(n)} ${n === 1 ? "job" : "jobs"}`;
-  $("kmCount").textContent = q ? `${fmtInt(rows.length)} of ${jobs(km.rows.length)}` : jobs(rows.length);
-  const span = v.amtKey ? 7 : 6;
-  $("kmBody").innerHTML = rows.length ? rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.jobNo)}</td><td>${esc(r.lobLabel)}</td>` +
-      `<td>${esc(r.branch)}</td><td>${esc(r.jobOwner)}</td><td>${esc(fmtDay(r.periodDate))}</td>` +
-      (v.amtKey ? `<td class="num">${fmtMoney(r[v.amtKey])}</td>` : "") + `</tr>`).join("")
-    : `<tr><td class="empty" colspan="${span}">No jobs.</td></tr>`;
-  $("kmFoot").innerHTML = v.amtKey && rows.length
-    ? `<tr><td colspan="6">Total</td><td class="num">${fmtMoney(rows.reduce((a, r) => a + (Number(r[v.amtKey]) || 0), 0))}</td></tr>` : "";
+  const nJobs = new Set(rows.map((r) => r.shipmentId)).size;
+  const what = d.kind === "jobs" ? jobs(rows.length) : `${fmtInt(rows.length)} charge ${rows.length === 1 ? "line" : "lines"} · ${jobs(nJobs)}`;
+  $("kmCount").textContent = q ? `${what} match` : what;
+  $("kmBody").innerHTML = rows.length
+    ? rows.map((r, i) => `<tr><td>${i + 1}</td>${d.cols.map((c) => `<td class="${c.num ? "num" : ""}">${cellText(c, r)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td class="empty" colspan="${d.cols.length + 1}">No jobs.</td></tr>`;
+  if (d.amtKey && rows.length) {
+    const total = rows.reduce((a, r) => a + (Number(r[d.amtKey]) || 0), 0);
+    $("kmFoot").innerHTML = `<tr><td></td>${d.cols.map((c, i) => i === 0 ? "<td>Total</td>"
+      : `<td class="${c.num ? "num" : ""}">${c.key === d.amtKey ? fmtMoney(total) : ""}</td>`).join("")}</tr>`;
+  } else {
+    $("kmFoot").innerHTML = "";
+  }
 }
 
-function closeKpi() { $("kpiModal").classList.add("hidden"); }
+function closeKpi() { km.req++; $("kpiModal").classList.add("hidden"); }
 document.querySelectorAll(".kpi-click").forEach((card) => {
   card.onclick = () => openKpi(card.dataset.kpi);
   card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openKpi(card.dataset.kpi); } };
