@@ -108,6 +108,9 @@
   .filters label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
   .select { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font: inherit;
             font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .fx { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+  .fx input { width: 70px; border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; font: inherit; font-size: 13px;
+              font-weight: 600; color: var(--ink); text-align: right; }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
   .panel-head { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .panel-head h2 { margin: 0 auto 0 0; font-size: 15px; font-weight: 600; color: var(--ink-soft); }
@@ -247,7 +250,8 @@
         <label for="btFrom">From</label><select class="select" id="btFrom"></select>
         <label for="btTo">To</label><select class="select" id="btTo"></select>
         <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
-        <select class="select" id="btCur" aria-label="Currency" title="1 USD = 1.4 CAD"><option>USD</option><option>CAD</option></select>
+        <select class="select" id="btCur" aria-label="Currency"><option>USD</option><option>CAD</option></select>
+        <span class="fx" id="btFx">1 USD = <input id="btRate" type="number" min="0.01" step="0.01" value="1.40" aria-label="CAD per USD"> CAD</span>
       </div>
       <div class="topbar-actions">
         <button class="btn-refresh" id="caRefresh" type="button">
@@ -359,10 +363,15 @@ async function start() {
 
 // ============================================================ Canada KPIs
 const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// SAR Canada amounts are in CAD; they are shown in USD by default (1 USD = 1.4 CAD), or in CAD.
-const CAD_PER_USD = 1.4;
+// SAR Canada amounts are in CAD; they are shown in USD by default at 1 USD = 1.4 CAD, or in CAD.
+// The viewer can change the rate; it is remembered in this browser only.
+const DEFAULT_CAD_PER_USD = 1.4;
+const RATE_KEY = "auditCadPerUsd";
+let cadPerUsd = DEFAULT_CAD_PER_USD;
+try { const v = parseFloat(localStorage.getItem(RATE_KEY)); if (v > 0) cadPerUsd = v; } catch {}
 const currency = () => $("btCur").value;
-const fmtMoney = (cad) => `${currency()} ${fmtAmt(currency() === "USD" ? (Number(cad) || 0) / CAD_PER_USD : cad)}`;
+const toShown = (cad) => currency() === "USD" ? (Number(cad) || 0) / cadPerUsd : (Number(cad) || 0);
+const fmtMoney = (cad) => `${currency()} ${fmtAmt(toShown(cad))}`;
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {
   const d = iso ? new Date(iso) : null;
@@ -512,7 +521,7 @@ function renderBranchTable() {
 
   const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
   const wt = (r) => byAmount ? (Number(r[rep.amtKey]) || 0) : 1;
-  const fmt = (n) => byAmount ? fmtAmt(currency() === "USD" ? n / CAD_PER_USD : n) : fmtInt(n);
+  const fmt = (n) => byAmount ? fmtAmt(toShown(n)) : fmtInt(n);
   const blank = () => ({ total: 0, by: {} });
   const add = (t, r) => { const w = wt(r); t.total += w; t.by[r.mk] = (t.by[r.mk] || 0) + w; };
 
@@ -564,7 +573,20 @@ $("btExpand").onclick = () => {
 $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
-$("btCur").onchange = () => { renderBranchTable(); if (!$("kpiModal").classList.contains("hidden")) renderKpiRows(); };
+function redrawMoney() {
+  $("btFx").classList.toggle("hidden", currency() !== "USD");
+  renderBranchTable();
+  if (!$("kpiModal").classList.contains("hidden")) renderKpiRows();
+}
+$("btCur").onchange = redrawMoney;
+$("btRate").value = cadPerUsd.toFixed(2);
+$("btRate").onchange = () => {
+  const v = parseFloat($("btRate").value);
+  if (v > 0) cadPerUsd = v;   // a blank or invalid entry keeps the previous rate
+  $("btRate").value = cadPerUsd.toFixed(2);
+  try { localStorage.setItem(RATE_KEY, String(cadPerUsd)); } catch {}
+  redrawMoney();
+};
 
 // ============================================================ KPI pop-ups
 // Each KPI card opens the jobs behind its number, for the months and LOB picked in the top bar.
