@@ -84,8 +84,8 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const TOKEN_KEY = "auditIdToken";   // this tab only, so a reload doesn't ask to sign in again
 let googleClientId = null;
+// The sign-in token is kept in memory only, so a refresh signs the user out.
 let idToken = null;
 let me = null;
 
@@ -96,10 +96,7 @@ function tokenValid(t) {
   } catch { return false; }
 }
 function getToken() { return idToken && tokenValid(idToken) ? idToken : null; }
-function setToken(t) {
-  idToken = t;
-  try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {}
-}
+function setToken(t) { idToken = t; }
 
 function showLogin(message) {
   setToken(null);
@@ -149,8 +146,8 @@ $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } c
 
 (async () => {
   try { googleClientId = (await (await fetch("/api/config")).json()).googleClientId; } catch {}
-  try { idToken = sessionStorage.getItem(TOKEN_KEY); } catch {}
-  if (getToken()) start(); else showLogin();
+  try { sessionStorage.removeItem("auditIdToken"); } catch {}   // drop a token saved by the earlier build
+  showLogin();
 })();
 </script>
 </body>
