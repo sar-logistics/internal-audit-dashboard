@@ -4,5 +4,8 @@
   "type": "module",
   "engines": {
     "node": "22.x"
+  },
+  "dependencies": {
+    "mongodb": "6.20.0"
   }
 }

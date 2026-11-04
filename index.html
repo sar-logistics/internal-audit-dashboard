@@ -53,6 +53,23 @@
                   border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
   main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   @media (max-width: 520px) { header .who { display: none; } }
+
+  /* KPI cards */
+  .sec-hd { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }
+  .sec-hd h2 { margin: 0; font-size: 16px; font-weight: 700; margin-right: auto; }
+  .sec-hd .note { font-size: 12px; color: var(--muted); }
+  .sec-hd button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px;
+                   padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  .sec-hd button:disabled { opacity: .6; cursor: default; }
+  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 480px) { .kpis { grid-template-columns: 1fr; } }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .kpi .lbl { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .kpi .val { font-size: 26px; font-weight: 800; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+  .kpi .sub { font-size: 12px; color: var(--muted); }
+  #caError { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
+             background: var(--danger-bg); color: var(--danger); }
 </style>
 </head>
 <body>
@@ -78,7 +95,18 @@
     <button id="signOut" type="button">Sign out</button>
   </header>
   <main>
-    <p>Signed in. The audit pages will appear here.</p>
+    <div class="sec-hd">
+      <h2>Canada</h2>
+      <span class="note" id="caUpdated"></span>
+      <button id="caRefresh" type="button">Refresh</button>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="lbl">Unbilled Revenue</div><div class="val" id="kUr">—</div><div class="sub" id="kUrSub">&nbsp;</div></div>
+      <div class="kpi"><div class="lbl">Unposted Cost</div><div class="val" id="kUc">—</div><div class="sub" id="kUcSub">&nbsp;</div></div>
+      <div class="kpi"><div class="lbl">Financial Lock</div><div class="val" id="kFl">—</div><div class="sub" id="kFlSub">&nbsp;</div></div>
+      <div class="kpi"><div class="lbl">Operation Lock</div><div class="val" id="kOl">—</div><div class="sub" id="kOlSub">&nbsp;</div></div>
+    </div>
+    <div id="caError" class="hidden"></div>
   </main>
 </section>
 
@@ -140,7 +168,41 @@ async function start() {
   $("meAvatar").classList.toggle("hidden", !me.picture);
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
+  loadCanada();
 }
+
+// ============================================================ Canada KPIs
+const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
+const fmtWhen = (iso) => {
+  const d = iso ? new Date(iso) : null;
+  return d && !isNaN(d) ? d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " IST" : "";
+};
+
+async function loadCanada(refresh) {
+  $("caRefresh").disabled = true;
+  $("caError").classList.add("hidden");
+  try {
+    const k = await api("/api/canada-kpis", { refresh: !!refresh });
+    $("kUr").textContent = fmtAmt(k.unbilledRevenue.amount);
+    $("kUrSub").textContent = `${fmtInt(k.unbilledRevenue.jobs)} jobs with unbilled revenue`;
+    $("kUc").textContent = fmtAmt(k.unpostedCost.amount);
+    $("kUcSub").textContent = `${fmtInt(k.unpostedCost.jobs)} jobs with unposted cost`;
+    $("kFl").textContent = fmtInt(k.financialLock.locked);
+    $("kFlSub").textContent = `of ${fmtInt(k.totalJobs)} jobs · ${fmtInt(k.financialLock.pending)} not locked`;
+    $("kOl").textContent = fmtInt(k.operationLock.locked);
+    $("kOlSub").textContent = `of ${fmtInt(k.totalJobs)} jobs · ${fmtInt(k.operationLock.pending)} not locked`;
+    const pushed = [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop();
+    $("caUpdated").textContent = pushed ? `Data pushed ${fmtWhen(pushed)}` : "";
+  } catch (e) {
+    if (["signed out", "no access"].includes(e.message)) return;
+    $("caError").textContent = "Couldn't load Canada data: " + e.message;
+    $("caError").classList.remove("hidden");
+  } finally {
+    $("caRefresh").disabled = false;
+  }
+}
+$("caRefresh").onclick = () => loadCanada(true);
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
