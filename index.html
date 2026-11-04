@@ -285,11 +285,19 @@
         <div class="kpi stripe-good kpi-click" data-kpi="ol" tabindex="0" role="button"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
       </div>
 
-      <!-- Open Jobs report only, as in the CA ops dashboard (Total Jobs Created has no cards of its own) -->
-      <div class="kpi-row rep hidden" id="repKpis">
+      <!-- Cards for the report picked in the sidebar, as in the CA ops dashboard (Total Jobs Created has none) -->
+      <div class="kpi-row rep hidden" id="repKpis" data-for="open">
         <div class="kpi stripe-ink kpi-click" data-kpi="tj" tabindex="0" role="button"><div class="label">Total Jobs</div><div class="value" id="kTj">–</div><div class="delta soft" id="kTjSub">&nbsp;</div></div>
         <div class="kpi stripe-orange kpi-click" data-kpi="oj" tabindex="0" role="button"><div class="label">Open Jobs</div><div class="value orange" id="kOj">–</div><div class="delta soft" id="kOjSub">&nbsp;</div></div>
         <div class="kpi stripe-coral"><div class="label">% of Such Jobs</div><div class="value coral" id="kOjPct">–</div><div class="delta soft" id="kOjPctSub">&nbsp;</div></div>
+      </div>
+      <div class="kpi-row rep hidden" data-for="rev">
+        <div class="kpi kpi-click" data-kpi="ur" tabindex="0" role="button"><div class="label">Unbilled Revenue</div><div class="value" id="kRvAmt">–</div><div class="delta soft" id="kRvAmtSub">&nbsp;</div></div>
+        <div class="kpi stripe-orange kpi-click" data-kpi="ur" tabindex="0" role="button"><div class="label">Count of Unbilled Revenue</div><div class="value orange" id="kRvCnt">–</div><div class="delta soft" id="kRvCntSub">&nbsp;</div></div>
+      </div>
+      <div class="kpi-row rep hidden" data-for="cost">
+        <div class="kpi stripe-teal kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Unposted Cost</div><div class="value" id="kCsAmt">–</div><div class="delta soft" id="kCsAmtSub">&nbsp;</div></div>
+        <div class="kpi stripe-orange kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Count of Unposted Cost</div><div class="value orange" id="kCsCnt">–</div><div class="delta soft" id="kCsCntSub">&nbsp;</div></div>
       </div>
 
       <div class="panel">
@@ -386,8 +394,8 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
-  "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS" },   // as the Indonesia ops dashboard
-  "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS" },    // as the Thailand ops dashboard
+  "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
+  "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
 let company = "SAR Canada";
 const ent = () => ENTITIES[company];
@@ -549,13 +557,22 @@ function renderKpis() {
   const open = jobs.filter(KPI_VIEWS.oj.flag).length;
   const { lo, hi } = filterState();
   const fullMonth = (k) => `${MONTHS[k % 12]} ${Math.floor(k / 12)}`;
-  $("repKpis").classList.toggle("hidden", bt.report !== "open");
+  const period = `${fullMonth(lo)} → ${fullMonth(hi)}`;
+  document.querySelectorAll(".kpi-row.rep").forEach((row) => row.classList.toggle("hidden", row.dataset.for !== bt.report));
   $("kTj").textContent = fmtInt(jobs.length);
-  $("kTjSub").textContent = `${fullMonth(lo)} → ${fullMonth(hi)}`;
+  $("kTjSub").textContent = period;
   $("kOj").textContent = fmtInt(open);
   $("kOjSub").textContent = ent().openNote || "Not yet operation-locked";
   $("kOjPct").textContent = jobs.length ? `${(open / jobs.length * 100).toFixed(1)}%` : "–";
   $("kOjPctSub").textContent = `${fmtInt(open)} of ${fmtInt(jobs.length)} job${jobs.length === 1 ? "" : "s"}`;
+  $("kRvAmt").textContent = fmtMoney(sum(ur, "unbilledRevenue"));
+  $("kRvAmtSub").textContent = period;
+  $("kRvCnt").textContent = fmtInt(ur.length);
+  $("kRvCntSub").textContent = ent().revNote || "Unbilled Revenue ≠ 0";
+  $("kCsAmt").textContent = fmtMoney(sum(uc, "unpostedCost"));
+  $("kCsAmtSub").textContent = period;
+  $("kCsCnt").textContent = fmtInt(uc.length);
+  $("kCsCntSub").textContent = ent().costNote || "Unposted Cost ≠ 0";
   $("kFl").textContent = fmtInt(jobs.filter(KPI_VIEWS.fl.flag).length);
   $("kOl").textContent = fmtInt(jobs.filter(KPI_VIEWS.ol.flag).length);
 }
