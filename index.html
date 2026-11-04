@@ -8,19 +8,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+  /* Colours and layout follow the SAR IN Sea Export Pricing dashboard (light theme only, like it) */
   :root {
-    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e4e7ec;
-    --danger: #b42318; --danger-bg: #fef3f2;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #11151c; --card: #1a202a; --text: #e6e9ef; --muted: #98a2b3; --line: #2c3442;
-      --danger: #fda29b; --danger-bg: #3a1a18;
-    }
+    --paper: #F4F6FA; --card: #FFFFFF; --line: #E3E7F0;
+    --ink: #1C2136; --ink-soft: #4B536E; --ink-faint: #9299B3;
+    --accent: #2563EB; --teal: #0891B2; --purple: #7C3AED; --good: #059669; --coral: #DC2626;
+    --sidebar: #223D72;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
-         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { margin: 0; min-height: 100vh; background: var(--paper); color: var(--ink);
+         font: 14px/1.5 "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif; }
   .hidden { display: none !important; }
 
   /* sign-in (same look as the SAR IN Sea Export Pricing dashboard; the card stays white in dark mode) */
@@ -43,33 +40,71 @@
   #login .login-footer b { color: #1C2136; }
   @media (max-width: 420px) { #login .card { padding: 32px 22px; } }
 
-  /* signed in */
-  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-           background: var(--card); border-bottom: 1px solid var(--line); }
-  header .title { font-weight: 600; margin-right: auto; }
-  header img { width: 28px; height: 28px; border-radius: 50%; }
-  header .who { font-size: 13px; color: var(--muted); text-align: right; line-height: 1.3; }
-  header button { border: 1px solid var(--line); background: transparent; color: var(--text);
-                  border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
-  @media (max-width: 520px) { header .who { display: none; } }
+  /* signed in: navy sidebar + white top bar + content */
+  #app { display: flex; min-height: 100vh; }
+  .sidebar { width: 300px; flex-shrink: 0; background: var(--sidebar); color: #E4E9F2; display: flex; flex-direction: column;
+             position: sticky; top: 0; height: 100vh; border-right: 1px solid #14274A; }
+  .brand { padding: 22px 24px 18px; display: flex; align-items: center; gap: 14px; min-height: 70px; }
+  .brand img { height: 34px; display: block; }
+  .brand-sub { font-size: 11.5px; color: #8CA0C4; line-height: 1.35; }
+  .greeting { padding: 0 22px 14px; font-size: 12.5px; font-weight: 600; color: #9AB0D4; text-transform: uppercase;
+              letter-spacing: .3px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 6px; }
+  .nav { padding: 18px 12px; flex: 1; overflow-y: auto; }
+  .nav-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: #7C90B4; padding: 8px 12px; font-weight: 700; }
+  .nav-item { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 8px; color: #B7C4DC;
+              font-size: 13.5px; font-weight: 600; position: relative; cursor: pointer; margin-bottom: 2px; }
+  .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .nav-item.active { background: rgba(255,255,255,0.14); color: #fff; }
+  .nav-item.active::before { content: ""; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 3px;
+                             border-radius: 0 3px 3px 0; background: #fff; }
+  .nav-item svg { flex-shrink: 0; }
+  .sidebar-foot { padding: 16px 24px 22px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 11.5px; color: #8CA0C4; }
+  .data-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .data-pill { display: flex; align-items: center; gap: 6px; background: #E8F7EE; color: #1F9D5A; font-size: 12px;
+               font-weight: 700; padding: 7px 13px; border-radius: 20px; white-space: nowrap; }
+  .data-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #1F9D5A; }
+  .last-sync { font-size: 10.5px; color: #7C90B4; }
+  .account { display: flex; align-items: center; gap: 10px; }
+  .account img, .account .initial { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
+  .account .initial { display: grid; place-items: center; background: #5B4038; color: #fff; font-size: 12px; font-weight: 700; }
+  .account b { color: #fff; font-size: 12.5px; }
+
+  .main { flex: 1; min-width: 0; }
+  .topbar { background: var(--card); border-bottom: 1px solid var(--line); padding: 16px 32px; min-height: 70px;
+            display: flex; align-items: center; gap: 14px; }
+  .topbar h1 { margin: 0; font-size: 21px; font-weight: 700; }
+  .topbar-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+  .btn-refresh { display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff;
+                 border: none; border-radius: 999px; padding: 8px 16px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+                 box-shadow: 0 2px 6px #2C4E8245, 0 1px 2px #2C4E8230; }
+  .btn-refresh:hover { box-shadow: 0 4px 10px #2C4E8250, 0 2px 4px #2C4E8235; }
+  .btn-refresh:disabled { opacity: .7; cursor: default; }
+  .btn-refresh.spinning svg { animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .btn-signout { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
+                 background: var(--paper); border: 1px solid var(--line); color: var(--ink-soft); }
+  .btn-signout:hover { background: #D6534A; border-color: #D6534A; color: #fff; }
+  .content { padding: 26px 32px 60px; }
 
   /* KPI cards */
-  .sec-hd { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }
-  .sec-hd h2 { margin: 0; font-size: 16px; font-weight: 700; margin-right: auto; }
-  .sec-hd .note { font-size: 12px; color: var(--muted); }
-  .sec-hd button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px;
-                   padding: 5px 12px; font: inherit; font-size: 13px; cursor: pointer; }
-  .sec-hd button:disabled { opacity: .6; cursor: default; }
-  .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 480px) { .kpis { grid-template-columns: 1fr; } }
-  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
-  .kpi .lbl { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-  .kpi .val { font-size: 26px; font-weight: 800; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
-  .kpi .sub { font-size: 12px; color: var(--muted); }
-  #caError { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
-             background: var(--danger-bg); color: var(--danger); }
+  .kpi-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 12px; padding: 16px 18px; }
+  .kpi.stripe-teal { border-top-color: var(--teal); }
+  .kpi.stripe-purple { border-top-color: var(--purple); }
+  .kpi.stripe-good { border-top-color: var(--good); }
+  .kpi .label { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
+  .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; color: var(--good); }
+  #caError { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; font-size: 13px; background: #FEF3F2; color: #B42318; }
+
+  @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 860px) {
+    #app { flex-direction: column; }
+    .sidebar { width: auto; height: auto; position: static; }
+    .nav { padding: 8px 12px; }
+    .topbar, .content { padding-left: 16px; padding-right: 16px; }
+  }
+  @media (max-width: 480px) { .kpi-row { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -88,26 +123,55 @@
 </section>
 
 <section id="app" class="hidden">
-  <header>
-    <span class="title">SAR Internal Audit</span>
-    <img id="meAvatar" alt="" class="hidden">
-    <span class="who"><span id="meName"></span><br><span id="meRole"></span></span>
-    <button id="signOut" type="button">Sign out</button>
-  </header>
-  <main>
-    <div class="sec-hd">
-      <h2>Canada</h2>
-      <span class="note" id="caUpdated"></span>
-      <button id="caRefresh" type="button">Refresh</button>
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="sar-logo-white.png" alt="SAR - Connecting Continents">
+      <div class="brand-sub">SAR Internal Audit<br>Dashboard</div>
     </div>
-    <div class="kpis">
-      <div class="kpi"><div class="lbl">Unbilled Revenue</div><div class="val" id="kUr">—</div><div class="sub" id="kUrSub">&nbsp;</div></div>
-      <div class="kpi"><div class="lbl">Unposted Cost</div><div class="val" id="kUc">—</div><div class="sub" id="kUcSub">&nbsp;</div></div>
-      <div class="kpi"><div class="lbl">Financial Lock</div><div class="val" id="kFl">—</div><div class="sub" id="kFlSub">&nbsp;</div></div>
-      <div class="kpi"><div class="lbl">Operation Lock</div><div class="val" id="kOl">—</div><div class="sub" id="kOlSub">&nbsp;</div></div>
+    <div class="greeting" id="greeting"></div>
+    <nav class="nav">
+      <div class="nav-label">Reports</div>
+      <div class="nav-item active" title="Canada">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c2 2 2 11 0 13M8 1.5c-2 2-2 11 0 13"/></svg>
+        <span>Canada</span>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="data-row">
+        <span class="data-pill"><span class="dot"></span>Live Data</span>
+        <span class="last-sync" id="caUpdated"></span>
+      </div>
+      <div class="account">
+        <img id="meAvatar" alt="" class="hidden">
+        <span class="initial" id="meInitial"></span>
+        <b id="meName"></b>
+      </div>
     </div>
-    <div id="caError" class="hidden"></div>
-  </main>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <h1>Canada</h1>
+      <div class="topbar-actions">
+        <button class="btn-refresh" id="caRefresh" type="button">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 8V3.5M13.5 8H9"/></svg>
+          Refresh data
+        </button>
+        <button class="btn-signout" id="signOut" type="button" aria-label="Sign out" title="Sign out">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="caError" class="hidden"></div>
+      <div class="kpi-row">
+        <div class="kpi"><div class="label">Unbilled Revenue</div><div class="value" id="kUr">–</div><div class="delta" id="kUrSub">&nbsp;</div></div>
+        <div class="kpi stripe-teal"><div class="label">Unposted Cost</div><div class="value" id="kUc">–</div><div class="delta" id="kUcSub">&nbsp;</div></div>
+        <div class="kpi stripe-purple"><div class="label">Financial Lock</div><div class="value" id="kFl">–</div><div class="delta" id="kFlSub">&nbsp;</div></div>
+        <div class="kpi stripe-good"><div class="label">Operation Lock</div><div class="value" id="kOl">–</div><div class="delta" id="kOlSub">&nbsp;</div></div>
+      </div>
+    </div>
+  </div>
 </section>
 
 <script>
@@ -163,9 +227,11 @@ async function start() {
   try { me = await api("/api/me"); }
   catch (e) { if (!["signed out", "no access"].includes(e.message)) showLogin("Couldn't sign in: " + e.message); return; }
   $("meName").textContent = me.name;
-  $("meRole").textContent = me.role === "admin" ? "Admin" : "Viewer";
+  $("greeting").textContent = `Hello ${String(me.name).split(" ")[0]} - ${me.role === "admin" ? "Admin" : "Viewer"}`;
   $("meAvatar").src = me.picture || "";
   $("meAvatar").classList.toggle("hidden", !me.picture);
+  $("meInitial").textContent = String(me.name || "?").trim().charAt(0).toUpperCase();
+  $("meInitial").classList.toggle("hidden", !!me.picture);
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
   loadCanada();
@@ -181,6 +247,7 @@ const fmtWhen = (iso) => {
 
 async function loadCanada(refresh) {
   $("caRefresh").disabled = true;
+  $("caRefresh").classList.add("spinning");
   $("caError").classList.add("hidden");
   try {
     const k = await api("/api/canada-kpis", { refresh: !!refresh });
@@ -193,13 +260,14 @@ async function loadCanada(refresh) {
     $("kOl").textContent = fmtInt(k.operationLock.locked);
     $("kOlSub").textContent = `of ${fmtInt(k.totalJobs)} jobs · ${fmtInt(k.operationLock.pending)} not locked`;
     const pushed = [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop();
-    $("caUpdated").textContent = pushed ? `Data pushed ${fmtWhen(pushed)}` : "";
+    $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
   } catch (e) {
     if (["signed out", "no access"].includes(e.message)) return;
     $("caError").textContent = "Couldn't load Canada data: " + e.message;
     $("caError").classList.remove("hidden");
   } finally {
     $("caRefresh").disabled = false;
+    $("caRefresh").classList.remove("spinning");
   }
 }
 $("caRefresh").onclick = () => loadCanada(true);
