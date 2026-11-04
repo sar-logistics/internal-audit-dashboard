@@ -210,7 +210,7 @@
     </div>
     <div class="greeting" id="greeting"></div>
     <nav class="nav" id="btReports">
-      <div class="nav-label">SAR Canada</div>
+      <div class="nav-label" id="navCompany">SAR Canada</div>
       <div class="nav-item active" data-report="total" title="Total Jobs Created">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><path d="M5.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M1.5 8.5h13"/></svg>
         <span>Total Jobs Created</span>
@@ -255,7 +255,7 @@
         <label for="btFrom">From</label><select class="select" id="btFrom"></select>
         <label for="btTo">To</label><select class="select" id="btTo"></select>
         <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
-        <select class="select" id="btCur" aria-label="Currency"><option>USD</option><option>CAD</option></select>
+        <span class="fx" id="btCurWrap"><select class="select" id="btCur" aria-label="Currency"><option>USD</option><option>CAD</option></select></span>
         <span class="fx" id="btFx">1 USD = <input id="btRate" type="number" min="0.01" step="0.01" value="1.40" aria-label="CAD per USD"> CAD</span>
       </div>
       <div class="topbar-actions">
@@ -363,45 +363,63 @@ async function start() {
   $("meInitial").classList.toggle("hidden", !!me.picture);
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
-  loadCanada();
+  loadCompany();
 }
 
-// ============================================================ Canada KPIs
+// ============================================================ companies
+// Each connected company tab reads its own database through api/mongo-batch.js (dataset), in the
+// currency its data is stored in (source). Pop-up columns per company are set further down (drills).
+const ENTITIES = {
+  "SAR Canada": { dataset: "canada", source: "CAD" },
+  "SAR USA":    { dataset: "usa",    source: "USD" },
+};
+let company = "SAR Canada";
+const ent = () => ENTITIES[company];
+const loaded = {};   // company -> api response, so switching tabs back doesn't reload
+
 const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // SAR Canada amounts are in CAD; they are shown in USD by default at 1 USD = 1.4 CAD, or in CAD.
-// The viewer can change the rate; it is remembered in this browser only.
+// The viewer can change the rate; it is remembered in this browser only. SAR USA amounts are in USD.
 const DEFAULT_CAD_PER_USD = 1.4;
 const RATE_KEY = "auditCadPerUsd";
 let cadPerUsd = DEFAULT_CAD_PER_USD;
 try { const v = parseFloat(localStorage.getItem(RATE_KEY)); if (v > 0) cadPerUsd = v; } catch {}
-const currency = () => $("btCur").value;
-const toShown = (cad) => currency() === "USD" ? (Number(cad) || 0) / cadPerUsd : (Number(cad) || 0);
-const fmtMoney = (cad) => `${currency()} ${fmtAmt(toShown(cad))}`;
+const currency = () => ent().source === "CAD" ? $("btCur").value : ent().source;
+const toShown = (v) => ent().source === "CAD" && currency() === "USD" ? (Number(v) || 0) / cadPerUsd : (Number(v) || 0);
+const fmtMoney = (v) => `${currency()} ${fmtAmt(toShown(v))}`;
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {
   const d = iso ? new Date(iso) : null;
   return d && !isNaN(d) ? d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " IST" : "";
 };
 
-async function loadCanada(refresh) {
+function showLoaded(k) {
+  setBranchData(k ? k.jobs : null, k ? k.evaJobs : null);
+  const pushed = k ? [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop() : "";
+  $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
+}
+
+async function loadCompany(refresh) {
+  const co = company;
+  if (!refresh && loaded[co]) return showLoaded(loaded[co]);
+  showLoaded(null);
   $("caRefresh").disabled = true;
   $("caRefresh").classList.add("spinning");
   $("caError").classList.add("hidden");
   try {
-    const k = await api("/api/mongo-batch", { dataset: "canada", refresh: !!refresh });
-    setBranchData(k.jobs, k.evaJobs);
-    const pushed = [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop();
-    $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
+    const k = await api("/api/mongo-batch", { dataset: ENTITIES[co].dataset, refresh: !!refresh });
+    loaded[co] = k;
+    if (co === company) showLoaded(k);
   } catch (e) {
-    if (["signed out", "no access"].includes(e.message)) return;
-    $("caError").textContent = "Couldn't load Canada data: " + e.message;
+    if (["signed out", "no access"].includes(e.message) || co !== company) return;
+    $("caError").textContent = `Couldn't load ${co} data: ` + e.message;
     $("caError").classList.remove("hidden");
   } finally {
     $("caRefresh").disabled = false;
     $("caRefresh").classList.remove("spinning");
   }
 }
-$("caRefresh").onclick = () => loadCanada(true);
+$("caRefresh").onclick = () => loadCompany(true);
 
 // ============================================================ Branch › Job Owner table
 // Same reports as the Canada ops dashboard. Columns are months of each job's period date.
@@ -439,9 +457,9 @@ const monthLabel = (k) => `${MONTHS[k % 12]} '${String(Math.floor(k / 12)).slice
 function lobLabel(lob, direction) {
   const c = String(lob || "").trim().toUpperCase();
   if (direction === "General" || /^GEN/.test(c)) return "General";
-  const mode = c.includes(" ") ? (c.includes("AIR") ? "Air" : c.includes("ROAD") ? "Road" : "Sea")
-                               : (c.endsWith("A") ? "Air" : c.endsWith("R") ? "Road" : "Sea");
-  return `${mode} ${direction}`;
+  if (c.includes(" ")) return c.toLowerCase().replace(/\b\w/g, (x) => x.toUpperCase());
+  const mode = c.endsWith("A") ? "Air" : c.endsWith("R") ? "Road" : "Sea";
+  return direction ? `${mode} ${direction}` : mode;
 }
 
 function unpack(set) {
@@ -583,7 +601,9 @@ $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); i
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 function redrawMoney() {
-  $("btFx").classList.toggle("hidden", currency() !== "USD");
+  const cad = ent().source === "CAD";
+  $("btCurWrap").classList.toggle("hidden", !cad);
+  $("btFx").classList.toggle("hidden", !cad || currency() !== "USD");
   renderBranchTable();
   if (!$("kpiModal").classList.contains("hidden") && km.drill) {
     $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${currency()})` : ""}</th>`).join("")}</tr>`;
@@ -644,24 +664,50 @@ const evaCols = (amtKey, amtLabel, amts) => [
 const COLS_EVA_REV = evaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS);
 const COLS_EVA_COST = evaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS);
 
+// SAR USA: the USA Sea Ops dashboard's columns (Direction and LOB on job lists; ...Usd amounts on charge lines)
+const withAfter = (cols, afterKey, extra) => cols.flatMap((c) => c.key === afterKey ? [c, extra] : [c]);
+const US_COLS_TOTAL_JOBS = withAfter(withAfter(COLS_TOTAL_JOBS, "shipmentId", { key: "direction", label: "Direction" }),
+                                     "cargoType", { key: "lob", label: "LOB" });
+const US_COLS_OPEN_JOBS = withAfter(withAfter(COLS_OPEN_JOBS, "shipmentId", { key: "direction", label: "Direction" }),
+                                    "cargoType", { key: "lob", label: "LOB" });
+const usEvaCols = (amtKey, amtLabel, amts) => [
+  { key: "shipmentId", label: "Job No." }, { key: "etdEtaNew", label: "ETD/ETA New", date: true }, { key: "charge", label: "Charge" },
+  { key: amtKey, label: amtLabel, num: true }, { key: "lob", label: "LOB" }, { key: "jobDate", label: "Job Date", date: true },
+  { key: "organization", label: "Organization" }, { key: "jobOwner", label: "Job Owner" },
+  { key: "operationLockDate", label: "Operation Lock Date", date: true },
+  ...[...amts, "estimatedProfit:Estimated Profit", "actualProfit:Actual Profit"]
+    .map((x) => { const [key, label] = x.split(":"); return { key: key + "Usd", label, num: true }; }),
+  { key: "financialLockDate", label: "Financial Lock Date", date: true },
+  { key: "receivableFrom", label: "Receivable From" }, { key: "payableTo", label: "Payable To" },
+];
+
 // kind: "jobs" = job records, "rev" / "cost" = charge lines
-const DRILLS = {
-  total: { kind: "jobs", cols: COLS_TOTAL_JOBS },
-  open:  { kind: "jobs", cols: COLS_OPEN_JOBS },
-  rev:   { kind: "rev",  cols: COLS_EVA_REV,  amtKey: "unbilledRevenue" },
-  cost:  { kind: "cost", cols: COLS_EVA_COST, amtKey: "unpostedCost" },
+const DRILLS_BY_DATASET = {
+  canada: {
+    total: { kind: "jobs", cols: COLS_TOTAL_JOBS },
+    open:  { kind: "jobs", cols: COLS_OPEN_JOBS },
+    rev:   { kind: "rev",  cols: COLS_EVA_REV,  amtKey: "unbilledRevenue" },
+    cost:  { kind: "cost", cols: COLS_EVA_COST, amtKey: "unpostedCost" },
+  },
+  usa: {
+    total: { kind: "jobs", cols: US_COLS_TOTAL_JOBS },
+    open:  { kind: "jobs", cols: US_COLS_OPEN_JOBS },
+    rev:   { kind: "rev",  cols: usEvaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS), amtKey: "unbilledRevenue" },
+    cost:  { kind: "cost", cols: usEvaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS),     amtKey: "unpostedCost" },
+  },
 };
+const drills = () => DRILLS_BY_DATASET[ent().dataset];
 const KPI_VIEWS = {
-  ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, drill: DRILLS.rev },
-  uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    drill: DRILLS.cost },
-  fl: { title: "Financial Lock Pending", pool: "jobs", flag: (r) => !!r.finPending,                        drill: DRILLS.open },
-  ol: { title: "Operation Lock Pending", pool: "jobs", flag: (r) => !!r.opsPending,                        drill: DRILLS.open },
+  ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => (Number(r.unbilledRevenue) || 0) > 0, drill: "rev" },
+  uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => (Number(r.unpostedCost) || 0) > 0,    drill: "cost" },
+  fl: { title: "Financial Lock Pending", pool: "jobs", flag: (r) => !!r.finPending,                        drill: "open" },
+  ol: { title: "Operation Lock Pending", pool: "jobs", flag: (r) => !!r.opsPending,                        drill: "open" },
 };
 const km = { rows: [], drill: null, req: 0 };
 
 function openKpi(key) {
   const v = KPI_VIEWS[key];
-  openDrill(v.title, v.drill, inFilters(v.pool).filter(v.flag), filterLabel());
+  openDrill(v.title, drills()[v.drill], inFilters(v.pool).filter(v.flag), filterLabel());
 }
 
 // A number in the Branch › Job Owner table: the jobs counted in that cell
@@ -671,7 +717,7 @@ function openCell(b, o, m) {
   const rows = bt.flagged.filter((r) => (!b || r.branch === b) && (!o || r.jobOwner === o) && (!m || r.mk === +m));
   const where = [b || "All branches", o].filter(Boolean).join(" › ");
   const { lob } = filterState();
-  openDrill(rep.title, DRILLS[bt.report], rows, `${where} · ${m ? monthLabel(+m) : filterLabel().split(" · ")[0]} · ${lob || "All LOBs"}`);
+  openDrill(rep.title, drills()[bt.report], rows, `${where} · ${m ? monthLabel(+m) : filterLabel().split(" · ")[0]} · ${lob || "All LOBs"}`);
 }
 
 async function openDrill(title, drill, summaryRows, subtitle) {
@@ -691,13 +737,14 @@ async function openDrill(title, drill, summaryRows, subtitle) {
   if (!jobNos.length) { if (req === km.req) renderKpiRows(); return; }
   try {
     const { rows } = drill.kind === "jobs"
-      ? await api("/api/mongo-batch", { dataset: "jobDetails", jobNos })
-      : await api("/api/mongo-batch", { dataset: "chargeLines", jobNos, kind: drill.kind });
+      ? await api("/api/mongo-batch", { dataset: "jobDetails", entity: ent().dataset, jobNos })
+      : await api("/api/mongo-batch", { dataset: "chargeLines", entity: ent().dataset, jobNos, kind: drill.kind });
     if (req !== km.req) return;   // another pop-up was opened meanwhile
     km.rows = rows.map((c) => drill.kind === "jobs"
       ? { ...c, shipmentId: String(c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.periodDate || "",
           location: c.location || c.jobBranch || c.branch || "", jobOwner: c.jobOwner || c.operator || "" }
-      : { ...c, shipmentId: String(c.jobNo ?? ""), etdEtaNew: c.etdEtaNew || c.etdEta || c.jobDate || "" });
+      : { ...c, shipmentId: String(c.jobNo ?? c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.etdEta || c.jobDate || "",
+          lob: c.lob || c.lobExportImport || c.lob2 || "" });
     km.rows.sort(drill.amtKey
       ? (a, b) => a.shipmentId.localeCompare(b.shipmentId) || String(a.charge || "").localeCompare(String(b.charge || ""))
       : (a, b) => String(a.location).localeCompare(String(b.location)) || a.shipmentId.localeCompare(b.shipmentId));
@@ -746,19 +793,27 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("kpiM
 $("kmSearch").oninput = renderKpiRows;
 
 // ============================================================ company tabs
-// Only SAR Canada has data so far; the other companies show a placeholder until they are connected.
+// Companies in ENTITIES have data; the others show a placeholder until they are connected.
 $("companyTabs").onclick = (e) => {
   const b = e.target.closest("button[data-co]");
   if (!b) return;
-  const co = b.dataset.co, isCanada = co === "SAR Canada";
+  const co = b.dataset.co, connected = !!ENTITIES[co];
   document.querySelectorAll("#companyTabs button").forEach((x) => x.classList.toggle("on", x === b));
   $("pageTitle").textContent = co;
-  $("canadaContent").classList.toggle("hidden", !isCanada);
-  $("btReports").classList.toggle("hidden", !isCanada);
-  $("caRefresh").classList.toggle("hidden", !isCanada);
-  $("btFilters").classList.toggle("hidden", !isCanada);
-  $("coEmpty").classList.toggle("hidden", isCanada);
+  $("canadaContent").classList.toggle("hidden", !connected);
+  $("btReports").classList.toggle("hidden", !connected);
+  $("caRefresh").classList.toggle("hidden", !connected);
+  $("btFilters").classList.toggle("hidden", !connected);
+  $("coEmpty").classList.toggle("hidden", connected);
   $("coEmptyText").textContent = `${co} isn't connected to the audit dashboard yet.`;
+  if (!connected || co === company) return;
+  company = co;
+  $("navCompany").textContent = co;
+  $("btLob").value = "";
+  bt.open.clear();
+  closeKpi();
+  redrawMoney();
+  loadCompany();
 };
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };

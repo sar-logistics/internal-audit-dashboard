@@ -1,65 +1,92 @@
 // SAR Internal Audit Dashboard — data API (Vercel serverless function), read only.
 //
-//   POST /api/mongo-batch  { dataset: "canada", refresh? }  (signed in) -> Canada KPIs + per-job rows
-//     { unbilledRevenue: { amount, jobs }, unpostedCost: { amount, jobs },
-//       financialLock: { locked, pending }, operationLock: { locked, pending },
-//       totalJobs, dataRefreshedAt, builtAt,
+//   POST /api/mongo-batch  { dataset: "canada" | "usa", refresh? }  (signed in) -> per-job rows
+//     { jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows },
 //       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost], rows },
-//       jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows } }
+//       dataRefreshedAt: { jobs, estimatedVsActual }, builtAt }
+//     The KPI cards and the Branch › Job Owner table are worked out from these rows in the page.
 //     refresh: true skips the 5-minute cache.
-//   POST /api/mongo-batch  { dataset: "jobDetails", jobNos }        -> { rows }  job records for a pop-up
-//   POST /api/mongo-batch  { dataset: "chargeLines", jobNos, kind } -> { rows }  kind "rev" | "cost": charge lines > 0
+//   POST /api/mongo-batch  { dataset: "jobDetails",  entity, jobNos }       -> { rows }  job records for a pop-up
+//   POST /api/mongo-batch  { dataset: "chargeLines", entity, jobNos, kind } -> { rows }  kind "rev" | "cost": charge lines > 0
 //
-// Same rules as the SAR Canada Sea Ops dashboard (its api/mongo-batch.js + index.html):
-//   • Unbilled Revenue / Unposted Cost: estimatedvsactual charge lines summed per job (jobNo);
-//     a job counts when its sum is > 0, and the amount is the total of those jobs. Jobs with no
-//     direction are left out, as on the Canada dashboard's Unbilled Revenue / Unposted Cost pages.
-//     Cost uses unpostedCost, falling back to the Canada sheet's unbilledCost.
-//   • Financial / Operation Lock: jobs in the ca_ops_* job collections that have a lock date
-//     (financialLockDate / financialLock, operationLockDate / operationLock); pending = blank.
+// SAR Canada — same rules as the SAR Canada Sea Ops dashboard (database sar-ca-ops):
+//   • Unbilled Revenue / Unposted Cost: estimatedvsactual charge lines summed per job (jobNo); a job
+//     counts when its sum is > 0. Jobs with no direction are left out. Cost uses unpostedCost,
+//     falling back to the Canada sheet's unbilledCost. Amounts are in CAD.
+//   • Jobs: the ca_ops_* collections. Open = isOpen, else no Operation Lock Date.
+// SAR USA — same rules as the SAR USA Sea Ops dashboard (database sar-usa-ops):
+//   • Unbilled Revenue / Unposted Cost: usa_ops_etdeta charge lines of Sea / Air / Road Export and
+//     Import (lobExportImport), summed per shipment; period = ETD/ETA New. Amounts are in USD.
+//   • Jobs: usa_ops_jobs (every LOB). Period = ETD/ETA New › Job Date. Open = no Operation Lock Date.
+// Both: Financial / Operation Lock Pending = the job has no lock date.
 //
-// Environment: CANADA_URI (connection string for the cluster holding sar-ca-ops; a read-only
-//              Atlas user is enough), CA_MONGO_DB (default "sar-ca-ops").
+// Environment: CANADA_URI (cluster holding sar-ca-ops), USA_URI (cluster holding sar-usa-ops; falls
+// back to CANADA_URI when both are on the same cluster), CA_MONGO_DB / USA_MONGO_DB to rename the
+// databases. A read-only Atlas user is enough.
 
 import { MongoClient } from "mongodb";
 import { authenticate, sendError, HttpError } from "./mongo.js";
 
-const DB_NAME = process.env.CA_MONGO_DB || "sar-ca-ops";
-const JOB_COLLECTIONS = ["ca_ops_export", "ca_ops_import", "ca_ops_air_export", "ca_ops_air_import",
-                         "ca_ops_road_export", "ca_ops_general"];
-const EVA_COLLECTION = "estimatedvsactual";
+const ENTITIES = {
+  canada: { envs: ["CANADA_URI", "CA_MONGO_URI"], db: process.env.CA_MONGO_DB || "sar-ca-ops" },
+  usa:    { envs: ["USA_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.USA_MONGO_DB || "sar-usa-ops" },
+};
 const TTL_MS = 5 * 60 * 1000;
 
 const g = globalThis;
-async function getDb() {
-  // Forgive common paste slips: spaces or new lines, surrounding quotes, a leading "CANADA_URI=".
-  const MONGO_URI = String(process.env.CANADA_URI || process.env.CA_MONGO_URI || "").trim()
-    .replace(/^(CANADA_URI|CA_MONGO_URI)\s*=\s*/, "").replace(/^["']|["']$/g, "").trim();
-  if (!MONGO_URI) throw new HttpError(500, "CANADA_URI is not set");
-  if (!/^mongodb(\+srv)?:\/\//.test(MONGO_URI)) {
-    throw new HttpError(500, `CANADA_URI must start with mongodb+srv:// (it starts with "${MONGO_URI.slice(0, 6)}…").`);
+g._auditMongo = g._auditMongo || new Map();   // connection string -> connecting client
+
+function entityOf(name) {
+  const e = ENTITIES[name];
+  if (!e) throw new HttpError(400, "Unknown company");
+  return e;
+}
+
+async function getDb(entity) {
+  const e = entityOf(entity);
+  const envName = e.envs.find((n) => process.env[n]) || e.envs[0];
+  // Forgive common paste slips: spaces or new lines, surrounding quotes, a leading "NAME=".
+  const uri = String(process.env[envName] || "").trim()
+    .replace(/^[A-Z_]+\s*=\s*/, "").replace(/^["']|["']$/g, "").trim();
+  if (!uri) throw new HttpError(500, `${e.envs[0]} is not set`);
+  if (!/^mongodb(\+srv)?:\/\//.test(uri)) {
+    throw new HttpError(500, `${envName} must start with mongodb+srv:// (it starts with "${uri.slice(0, 6)}…").`);
   }
-  if (/<\s*(db_)?password\s*>/i.test(MONGO_URI)) throw new HttpError(500, "CANADA_URI still has the <PASSWORD> placeholder: put the real password in its place.");
-  if (!g._caMongo) {
-    g._caMongo = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 8000, maxPoolSize: 3 }).connect();
-    g._caMongo.catch(() => { g._caMongo = undefined; });
+  if (/<\s*(db_)?password\s*>/i.test(uri)) throw new HttpError(500, `${envName} still has the <PASSWORD> placeholder: put the real password in its place.`);
+  if (!g._auditMongo.has(uri)) {
+    const p = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, maxPoolSize: 3 }).connect();
+    p.catch(() => g._auditMongo.delete(uri));
+    g._auditMongo.set(uri, p);
   }
-  return (await g._caMongo).db(DB_NAME);
+  try {
+    return (await g._auditMongo.get(uri)).db(e.db);
+  } catch (err) {
+    throw mongoError(err, envName, e.db);
+  }
 }
 
 const toNum = (v) => { const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(/[,\s]/g, "")); return isNaN(n) ? 0 : n; };
 const round2 = (n) => Math.round(n * 100) / 100;
 const filled = (v) => !(v === undefined || v === null || String(v).trim() === "");
+const projectionOf = (fields) => Object.fromEntries([["_id", 0], ...fields.map((f) => [f, 1])]);
 
+const JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "open", "finPending", "opsPending"];
+const EVA_JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "unbilledRevenue", "unpostedCost"];
+const finPendingOf = (d) => !(filled(d.financialLockDate) || filled(d.financialLock));
+const opsPendingOf = (d) => !(filled(d.operationLockDate) || filled(d.operationLock));
+
+// ---------------------------------------------------------------- SAR Canada (sar-ca-ops)
+
+const CA_JOB_COLLECTIONS = ["ca_ops_export", "ca_ops_import", "ca_ops_air_export", "ca_ops_air_import",
+                            "ca_ops_road_export", "ca_ops_general"];
+const CA_EVA = "estimatedvsactual";
 const evaDirection = (lob) => { const u = String(lob || "").toUpperCase(); return /^GEN/.test(u) ? "General" : /EXP/.test(u) ? "Export" : /IMP/.test(u) ? "Import" : ""; };
 
 // One row per estimatedvsactual job, as the Canada dashboard builds them (evaJobSummaries in its
 // mongo-batch.js): jobs without a direction are left out, and the period date is Job Date for
 // General jobs, otherwise ETD/ETA New › ETD/ETA › Job Date.
-const EVA_JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "unbilledRevenue", "unpostedCost"];
-
-async function amountsFromEva(db) {
-  const rows = await db.collection(EVA_COLLECTION)
+async function canadaEvaJobs(db) {
+  const rows = await db.collection(CA_EVA)
     .find({}, { projection: { _id: 0, jobNo: 1, unbilledRevenue: 1, unpostedCost: 1, unbilledCost: 1, lob: 1, lob2: 1, direction: 1,
                               etdEtaNew: 1, etdEta: 1, jobDate: 1, location: 1, jobOwner: 1, salesPerson: 1 } }).toArray();
   const byJob = new Map();
@@ -76,74 +103,138 @@ async function amountsFromEva(db) {
     t.rev  += toNum(e.unbilledRevenue);
     t.cost += toNum(filled(e.unpostedCost) ? e.unpostedCost : e.unbilledCost);
   }
-  const out = { unbilledRevenue: { amount: 0, jobs: 0 }, unpostedCost: { amount: 0, jobs: 0 }, evaJobs: { fields: EVA_JOB_FIELDS, rows: [] } };
+  const out = { fields: EVA_JOB_FIELDS, rows: [] };
   for (const [job, t] of byJob) {
     if (!t.direction) continue;
-    const rev = round2(t.rev), cost = round2(t.cost);
-    if (rev  > 0) { out.unbilledRevenue.amount += rev;  out.unbilledRevenue.jobs++; }
-    if (cost > 0) { out.unpostedCost.amount    += cost; out.unpostedCost.jobs++; }
-    out.evaJobs.rows.push([
+    out.rows.push([
       job, t.direction, t.lob2 || (t.direction === "General" ? "GEN" : "SEA " + t.direction.toUpperCase()),
       t.location || "(No Branch)", t.jobOwner || t.salesPerson || "(Unknown)",
       t.direction === "General" ? (t.jobDate || t.etdEtaNew || t.etdEta) : (t.etdEtaNew || t.etdEta || t.jobDate),
-      rev, cost,
+      round2(t.rev), round2(t.cost),
     ]);
   }
-  out.unbilledRevenue.amount = round2(out.unbilledRevenue.amount);
-  out.unpostedCost.amount    = round2(out.unpostedCost.amount);
   return out;
 }
 
-// One row per job in the ca_ops_* collections, for the Total Jobs Created / Open Jobs tables.
-// Same fields the Canada dashboard uses: branch = jobBranch › branch › location, owner = operator ›
-// jobOwner, period = periodDate › jobDate, open = isOpen (else no Operation Lock Date).
-// Direction and LOB fall back to the collection the job came from.
-const JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "open", "finPending", "opsPending"];
-const COLLECTION_LOB = { ca_ops_export: ["Export", "SEA EXPORT"], ca_ops_import: ["Import", "SEA IMPORT"],
-                         ca_ops_air_export: ["Export", "AIR EXPORT"], ca_ops_air_import: ["Import", "AIR IMPORT"],
-                         ca_ops_road_export: ["Export", "ROAD EXPORT"], ca_ops_general: ["General", "GEN"] };
+// One row per job in the ca_ops_* collections. Same fields the Canada dashboard uses: branch =
+// jobBranch › branch › location, owner = operator › jobOwner, period = periodDate › jobDate,
+// open = isOpen (else no Operation Lock Date). Direction and LOB fall back to the collection.
+const CA_COLLECTION_LOB = { ca_ops_export: ["Export", "SEA EXPORT"], ca_ops_import: ["Import", "SEA IMPORT"],
+                            ca_ops_air_export: ["Export", "AIR EXPORT"], ca_ops_air_import: ["Import", "AIR IMPORT"],
+                            ca_ops_road_export: ["Export", "ROAD EXPORT"], ca_ops_general: ["General", "GEN"] };
 
-async function locksFromJobs(db) {
-  const perCollection = await Promise.all(JOB_COLLECTIONS.map((name) => db.collection(name)
+async function canadaJobs(db) {
+  const perCollection = await Promise.all(CA_JOB_COLLECTIONS.map((name) => db.collection(name)
     .find({}, { projection: { _id: 0, financialLockDate: 1, financialLock: 1, operationLockDate: 1, operationLock: 1, syncedAt: 1,
                               shipmentId: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1, jobOwner: 1,
                               periodDate: 1, jobDate: 1, isOpen: 1 } })
     .toArray().then((docs) => docs.map((d) => ({ ...d, _col: name })))));
-  const docs = perCollection.flat();
-  const out = { totalJobs: docs.length, financialLock: { locked: 0, pending: 0 }, operationLock: { locked: 0, pending: 0 },
-                jobs: { fields: JOB_FIELDS, rows: [] }, jobsSyncedAt: "" };
-  for (const d of docs) {
-    const finPending = !(filled(d.financialLockDate) || filled(d.financialLock));
-    const opsPending = !(filled(d.operationLockDate) || filled(d.operationLock));
-    if (finPending) out.financialLock.pending++; else out.financialLock.locked++;
-    if (opsPending) out.operationLock.pending++; else out.operationLock.locked++;
-    if (d.syncedAt && String(d.syncedAt) > out.jobsSyncedAt) out.jobsSyncedAt = String(d.syncedAt);
-    const [colDir, colLob] = COLLECTION_LOB[d._col];
-    out.jobs.rows.push([
+  const out = { fields: JOB_FIELDS, rows: [], syncedAt: "" };
+  for (const d of perCollection.flat()) {
+    if (d.syncedAt && String(d.syncedAt) > out.syncedAt) out.syncedAt = String(d.syncedAt);
+    const [colDir, colLob] = CA_COLLECTION_LOB[d._col];
+    out.rows.push([
       String(d.shipmentId ?? ""), d.direction || colDir, d.lob || colLob,
       d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
       d.periodDate || d.jobDate || "",
       d.isOpen !== undefined ? !!d.isOpen : !filled(d.operationLockDate),
-      finPending, opsPending,
+      finPendingOf(d), opsPendingOf(d),
     ]);
   }
   return out;
 }
 
-// Detail rows for the pop-ups, fetched only when one is opened (same columns as the Canada
-// dashboard's drill-downs):
-//   jobDetails: the job records themselves (DV_COLS_TOTAL_JOBS / DV_COLS_OPEN_JOBS fields)
-//   chargeLines: estimatedvsactual charge lines with a positive unbilled revenue / unposted cost
+async function canadaData(db) {
+  const [jobs, evaJobs, evaLast] = await Promise.all([
+    canadaJobs(db), canadaEvaJobs(db),
+    db.collection(CA_EVA).find({ syncedAt: { $exists: true } }, { projection: { _id: 0, syncedAt: 1 } })
+      .sort({ syncedAt: -1 }).limit(1).toArray(),
+  ]);
+  const { syncedAt, ...jobRows } = jobs;
+  return { jobs: jobRows, evaJobs,
+           dataRefreshedAt: { jobs: syncedAt, estimatedVsActual: evaLast[0] ? String(evaLast[0].syncedAt) : "" } };
+}
+
+// ---------------------------------------------------------------- SAR USA (sar-usa-ops)
+
+const US_JOBS = "usa_ops_jobs";
+const US_ETDETA = "usa_ops_etdeta";
+const US_LOB_RE = /^(SEA|AIR|ROAD) (EXPORT|IMPORT)$/;
+const titleCase = (s) => String(s).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+// One row per job in usa_ops_jobs, as the USA dashboard reads them: branch = jobBranch › branch ›
+// location, owner = operator › jobOwner, period = ETD/ETA New › Job Date, open = no Operation Lock Date.
+async function usaJobs(db) {
+  const docs = await db.collection(US_JOBS)
+    .find({}, { projection: { _id: 0, shipmentId: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1,
+                              jobOwner: 1, etdEtaNew: 1, jobDate: 1, operationLockDate: 1, operationLock: 1,
+                              financialLockDate: 1, financialLock: 1 } }).toArray();
+  return { fields: JOB_FIELDS, rows: docs.map((d) => {
+    const lob = String(d.lob || "").trim().toUpperCase();
+    const direction = d.direction || (/EXPORT/.test(lob) ? "Export" : /IMPORT/.test(lob) ? "Import" : titleCase(lob.split(" ").pop() || ""));
+    return [
+      String(d.shipmentId ?? ""), direction, lob,
+      d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
+      d.etdEtaNew || d.jobDate || "",
+      !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
+    ];
+  }) };
+}
+
+// One row per shipment and LOB in usa_ops_etdeta (groupEtdEtaByShipment in the USA dashboard):
+// only Sea / Air / Road Export and Import lines; branch = location, owner = jobOwner, period =
+// the first line's ETD/ETA New; amounts summed over the shipment's lines.
+async function usaEvaJobs(db) {
+  const rows = await db.collection(US_ETDETA)
+    .find({}, { projection: { _id: 0, shipmentId: 1, lobExportImport: 1, location: 1, jobOwner: 1, etdEtaNew: 1,
+                              unbilledRevenue: 1, unpostedCost: 1 } }).toArray();
+  const byJob = new Map();
+  for (const e of rows) {
+    const job = String(e.shipmentId ?? "").trim();
+    const lob = String(e.lobExportImport || "").trim().toUpperCase();
+    if (!job || !US_LOB_RE.test(lob)) continue;
+    const key = job + "\u0001" + lob;
+    let t = byJob.get(key);
+    if (!t) {
+      t = { job, lob, direction: titleCase(lob.split(" ")[1]), location: e.location || "", jobOwner: e.jobOwner || "",
+            etdEtaNew: e.etdEtaNew || "", rev: 0, cost: 0 };
+      byJob.set(key, t);
+    }
+    t.rev  += toNum(e.unbilledRevenue);
+    t.cost += toNum(e.unpostedCost);
+  }
+  return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => [
+    t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew, round2(t.rev), round2(t.cost),
+  ]) };
+}
+
+async function usaData(db) {
+  const [jobs, evaJobs, stamps] = await Promise.all([
+    usaJobs(db), usaEvaJobs(db),
+    db.collection("_meta").find({ _id: { $in: ["lastPush_" + US_JOBS, "lastPush_" + US_ETDETA] } }).toArray(),
+  ]);
+  const at = (id) => { const s = stamps.find((d) => d._id === id); const t = s ? new Date(s.updatedAt) : null; return t && !isNaN(t) ? t.toISOString() : ""; };
+  return { jobs, evaJobs, dataRefreshedAt: { jobs: at("lastPush_" + US_JOBS), estimatedVsActual: at("lastPush_" + US_ETDETA) } };
+}
+
+// ---------------------------------------------------------------- pop-up details
+
+// Detail rows for the pop-ups, fetched only when one is opened (same columns as each ops dashboard's
+// drill-downs): jobDetails = the job records, chargeLines = charge lines with a positive unbilled
+// revenue / unposted cost.
 const JOB_DETAIL_FIELDS = ["shipmentId", "etdEtaNew", "periodDate", "location", "jobBranch", "branch", "jobOwner", "operator",
   "salesPerson", "customer", "cargoType", "etdLoadingPort", "etaDischarge", "jobDate", "loadingPort", "originPortCountry",
   "dischargePort", "destinationCountry", "houseNo", "consolNo", "carrierNumber", "carrier", "masterNo", "consignee", "shipper",
   "toiIncoTerms", "lob", "direction"];
-const CHARGE_FIELDS = ["jobNo", "lob", "lob2", "etdEtaNew", "etdEta", "charge", "unbilledRevenue", "unpostedCost", "unbilledCost",
+const CA_CHARGE_FIELDS = ["jobNo", "lob", "lob2", "etdEtaNew", "etdEta", "charge", "unbilledRevenue", "unpostedCost", "unbilledCost",
   "jobDate", "receivableFrom", "payableTo", "organization", "jobOwner", "salesPerson", "location", "operationLockDate",
   "estimatedRevenue", "bookedRevenue", "actualRevenue", "estimatedCost", "bookedCost", "actualCost", "estimatedProfit",
   "actualProfit", "financialLockDate"];
+const US_CHARGE_FIELDS = ["shipmentId", "lob", "lobExportImport", "etdEtaNew", "charge", "unbilledRevenue", "unpostedCost",
+  "jobDate", "organization", "jobOwner", "location", "operationLockDate", "estimatedRevenueUsd", "bookedRevenueUsd",
+  "actualRevenueUsd", "estimatedCostUsd", "bookedCostUsd", "actualCostUsd", "estimatedProfitUsd", "actualProfitUsd",
+  "financialLockDate", "receivableFrom", "payableTo"];
 const MAX_DETAIL_JOBS = 5000;
-const projectionOf = (fields) => Object.fromEntries([["_id", 0], ...fields.map((f) => [f, 1])]);
 
 function jobIds(body) {
   const ids = [...new Set((Array.isArray(body.jobNos) ? body.jobNos : []).map((j) => String(j ?? "").trim()).filter(Boolean))];
@@ -153,21 +244,28 @@ function jobIds(body) {
 // Job numbers may be stored as text or as numbers: match both
 const anyOf = (ids) => ({ $in: [...ids, ...ids.filter((j) => /^\d+$/.test(j)).map(Number)] });
 
-async function jobDetails(db, body) {
+async function jobDetails(db, entity, body) {
   const ids = jobIds(body);
   if (!ids.length) return { rows: [] };
-  const rows = (await Promise.all(JOB_COLLECTIONS.map((name) => db.collection(name)
+  const names = entity === "usa" ? [US_JOBS] : CA_JOB_COLLECTIONS;
+  const rows = (await Promise.all(names.map((name) => db.collection(name)
     .find({ shipmentId: anyOf(ids) }, { projection: projectionOf(JOB_DETAIL_FIELDS) }).toArray()))).flat();
   return { rows };
 }
 
-async function chargeLines(db, body) {
+async function chargeLines(db, entity, body) {
   const ids = jobIds(body);
   if (!ids.length) return { rows: [] };
-  const filter = body.kind === "cost"
+  const cost = body.kind === "cost";
+  if (entity === "usa") {
+    const filter = { shipmentId: anyOf(ids), lobExportImport: { $regex: US_LOB_RE.source, $options: "i" },
+                     [cost ? "unpostedCost" : "unbilledRevenue"]: { $gt: 0 } };
+    return { rows: await db.collection(US_ETDETA).find(filter, { projection: projectionOf(US_CHARGE_FIELDS) }).toArray() };
+  }
+  const filter = cost
     ? { jobNo: anyOf(ids), $or: [{ unpostedCost: { $gt: 0 } }, { unbilledCost: { $gt: 0 } }] }
     : { jobNo: anyOf(ids), unbilledRevenue: { $gt: 0 } };
-  const rows = await db.collection(EVA_COLLECTION).find(filter, { projection: projectionOf(CHARGE_FIELDS) }).toArray();
+  const rows = await db.collection(CA_EVA).find(filter, { projection: projectionOf(CA_CHARGE_FIELDS) }).toArray();
   for (const c of rows) {
     // Canada sheet naming: unbilledCost is the unposted cost
     if (!filled(c.unpostedCost)) c.unpostedCost = c.unbilledCost;
@@ -175,51 +273,45 @@ async function chargeLines(db, body) {
   return { rows };
 }
 
-let cache = { payload: null, at: 0 };
+// ---------------------------------------------------------------- handler
+
+const cache = new Map();   // entity -> { payload, at }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const body = req.body || {};
+  const entity = body.dataset === "canada" || body.dataset === "usa" ? body.dataset : (body.entity || "canada");
   try {
     await authenticate(req);
-    const body = req.body || {};
-    const { dataset, refresh } = body;
-    if (dataset === "jobDetails") return res.status(200).json(await jobDetails(await getDb(), body));
-    if (dataset === "chargeLines") return res.status(200).json(await chargeLines(await getDb(), body));
-    if (dataset !== "canada") throw new HttpError(400, "Unknown dataset");
-    const force = !!refresh;
-    if (force || !cache.payload || Date.now() - cache.at > TTL_MS) {
-      const db = await getDb();
-      const [amounts, locks, evaLast] = await Promise.all([
-        amountsFromEva(db),
-        locksFromJobs(db),
-        db.collection(EVA_COLLECTION).find({ syncedAt: { $exists: true } }, { projection: { _id: 0, syncedAt: 1 } })
-          .sort({ syncedAt: -1 }).limit(1).toArray(),
-      ]);
-      const { jobsSyncedAt, ...lockCounts } = locks;
-      cache = {
-        payload: { ...amounts, ...lockCounts,
-                   dataRefreshedAt: { jobs: jobsSyncedAt, estimatedVsActual: evaLast[0] ? String(evaLast[0].syncedAt) : "" },
-                   builtAt: new Date().toISOString() },
-        at: Date.now(),
-      };
+    entityOf(entity);
+    if (body.dataset === "jobDetails") return res.status(200).json(await jobDetails(await getDb(entity), entity, body));
+    if (body.dataset === "chargeLines") return res.status(200).json(await chargeLines(await getDb(entity), entity, body));
+    if (body.dataset !== "canada" && body.dataset !== "usa") throw new HttpError(400, "Unknown dataset");
+    const hit = cache.get(entity);
+    if (body.refresh || !hit || Date.now() - hit.at > TTL_MS) {
+      const db = await getDb(entity);
+      const data = entity === "usa" ? await usaData(db) : await canadaData(db);
+      cache.set(entity, { payload: { ...data, builtAt: new Date().toISOString() }, at: Date.now() });
     }
-    return res.status(200).json(cache.payload);
+    return res.status(200).json(cache.get(entity).payload);
   } catch (err) {
-    return sendError(res, err instanceof HttpError ? err : mongoError(err));
+    const e = ENTITIES[entity];
+    const envName = e ? (e.envs.find((n) => process.env[n]) || e.envs[0]) : "the connection string";
+    return sendError(res, err instanceof HttpError ? err : mongoError(err, envName, e ? e.db : ""));
   }
 }
 
 // Turns a MongoDB driver error into a message that says what to fix (no secrets in it).
-function mongoError(err) {
-  console.error("canada-kpis:", err);
+function mongoError(err, envName, dbName) {
+  console.error("mongo-batch:", err);
   // Mask any user:password@ the driver might echo back
   const m = String(err && err.message || "").replace(/\/\/[^/@\s]*@/g, "//***@");
   const name = String(err && err.name || "");
-  if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, "Database sign-in failed: check the user name and password in CANADA_URI.");
-  if (/not authorized on|unauthorized/i.test(m)) return new HttpError(500, `The database user in CANADA_URI can't read ${DB_NAME}: give it the read role on ${DB_NAME}.`);
-  if (/unescaped characters|must be escaped|percent-encoded/i.test(m)) return new HttpError(500, "The password in CANADA_URI has special characters (@ : / ? # %) that must be URL-encoded, e.g. @ → %40.");
-  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist/i.test(m)) return new HttpError(500, "Can't reach the database: check the cluster address in CANADA_URI and that Atlas Network Access allows Vercel (0.0.0.0/0).");
-  if (name === "MongoParseError" || name === "MongoAPIError") return new HttpError(500, "CANADA_URI can't be read: " + m.slice(0, 200));
+  if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, `Database sign-in failed: check the user name and password in ${envName}.`);
+  if (/not authorized on|unauthorized/i.test(m)) return new HttpError(500, `The database user in ${envName} can't read ${dbName}: give it the read role on ${dbName}.`);
+  if (/unescaped characters|must be escaped|percent-encoded/i.test(m)) return new HttpError(500, `The password in ${envName} has special characters (@ : / ? # %) that must be URL-encoded, e.g. @ → %40.`);
+  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist/i.test(m)) return new HttpError(500, `Can't reach the database: check the cluster address in ${envName} and that Atlas Network Access allows Vercel (0.0.0.0/0).`);
+  if (name === "MongoParseError" || name === "MongoAPIError") return new HttpError(500, `${envName} can't be read: ` + m.slice(0, 200));
   return new HttpError(500, "Database error: " + m.slice(0, 200));
 }
