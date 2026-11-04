@@ -1,0 +1,8 @@
+{
+  "name": "sar-internal-audit-dashboard",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  }
+}

@@ -3,10 +3,139 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SAR Internal Audit Dashboard</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;background:#f6f7f9;color:#222}</style>
+<title>SAR Internal Audit</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #667085; --line: #e4e7ec;
+    --danger: #b42318; --danger-bg: #fef3f2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11151c; --card: #1a202a; --text: #e6e9ef; --muted: #98a2b3; --line: #2c3442;
+      --danger: #fda29b; --danger-bg: #3a1a18;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .hidden { display: none !important; }
+
+  /* sign-in */
+  #login { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+  .card { width: 100%; max-width: 380px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 12px; padding: 32px 28px; text-align: center; }
+  .card h1 { margin: 0 0 4px; font-size: 20px; }
+  .card p { margin: 0 0 24px; color: var(--muted); font-size: 14px; }
+  #gsiButton { display: flex; justify-content: center; min-height: 44px; }
+  #loginMsg { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; font-size: 13px;
+              background: var(--danger-bg); color: var(--danger); text-align: left; }
+
+  /* signed in */
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+           background: var(--card); border-bottom: 1px solid var(--line); }
+  header .title { font-weight: 600; margin-right: auto; }
+  header img { width: 28px; height: 28px; border-radius: 50%; }
+  header .who { font-size: 13px; color: var(--muted); text-align: right; line-height: 1.3; }
+  header button { border: 1px solid var(--line); background: transparent; color: var(--text);
+                  border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+  @media (max-width: 520px) { header .who { display: none; } }
+</style>
 </head>
 <body>
-<p>SAR Internal Audit Dashboard — coming soon.</p>
+
+<section id="login">
+  <div class="card">
+    <h1>SAR Internal Audit</h1>
+    <p>Sign in with your SAR Google account.</p>
+    <div id="gsiButton"></div>
+    <div id="loginMsg" class="hidden"></div>
+  </div>
+</section>
+
+<section id="app" class="hidden">
+  <header>
+    <span class="title">SAR Internal Audit</span>
+    <img id="meAvatar" alt="" class="hidden">
+    <span class="who"><span id="meName"></span><br><span id="meRole"></span></span>
+    <button id="signOut" type="button">Sign out</button>
+  </header>
+  <main>
+    <p>Signed in. The audit pages will appear here.</p>
+  </main>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const TOKEN_KEY = "auditIdToken";   // this tab only, so a reload doesn't ask to sign in again
+let googleClientId = null;
+let idToken = null;
+let me = null;
+
+function tokenValid(t) {
+  try {
+    const p = JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return p.exp * 1000 > Date.now() + 60000;
+  } catch { return false; }
+}
+function getToken() { return idToken && tokenValid(idToken) ? idToken : null; }
+function setToken(t) {
+  idToken = t;
+  try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {}
+}
+
+function showLogin(message) {
+  setToken(null);
+  me = null;
+  $("app").classList.add("hidden");
+  $("login").classList.remove("hidden");
+  if (!googleClientId) message = "Sign-in is not configured.";
+  $("loginMsg").textContent = message || "";
+  $("loginMsg").classList.toggle("hidden", !message);
+  if (!googleClientId) return;
+  const render = () => {
+    google.accounts.id.initialize({ client_id: googleClientId, callback: onCredential, auto_select: false, ux_mode: "popup" });
+    google.accounts.id.renderButton($("gsiButton"), { theme: "outline", size: "large", shape: "rectangular", text: "continue_with", width: 292 });
+  };
+  if (window.google?.accounts?.id) render();
+  else window.addEventListener("load", render, { once: true });
+}
+
+function onCredential(resp) {
+  setToken(resp.credential);
+  start();
+}
+
+async function api(path, body) {
+  const token = getToken();
+  if (!token) { showLogin("Your sign-in expired. Please sign in again."); throw new Error("signed out"); }
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body || {}) });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401) { showLogin(data.error || "Please sign in again."); throw new Error("signed out"); }
+  if (r.status === 403) { showLogin(data.error || "This Google account doesn't have access."); throw new Error("no access"); }
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+async function start() {
+  try { me = await api("/api/me"); }
+  catch (e) { if (!["signed out", "no access"].includes(e.message)) showLogin("Couldn't sign in: " + e.message); return; }
+  $("meName").textContent = me.name;
+  $("meRole").textContent = me.role === "admin" ? "Admin" : "Viewer";
+  $("meAvatar").src = me.picture || "";
+  $("meAvatar").classList.toggle("hidden", !me.picture);
+  $("login").classList.add("hidden");
+  $("app").classList.remove("hidden");
+}
+
+$("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
+
+(async () => {
+  try { googleClientId = (await (await fetch("/api/config")).json()).googleClientId; } catch {}
+  try { idToken = sessionStorage.getItem(TOKEN_KEY); } catch {}
+  if (getToken()) start(); else showLogin();
+})();
+</script>
 </body>
 </html>
