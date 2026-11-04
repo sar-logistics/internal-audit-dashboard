@@ -1,6 +1,6 @@
 // SAR Internal Audit Dashboard — data API (Vercel serverless function), read only.
 //
-//   POST /api/mongo-batch  { dataset: "canada" | "usa" | "indonesia", refresh? }  (signed in) -> per-job rows
+//   POST /api/mongo-batch  { dataset: "canada" | "usa" | "indonesia" | "thailand", refresh? }  (signed in) -> per-job rows
 //     { jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows },
 //       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost,
 //                           revFlag, costFlag], rows },   revFlag / costFlag: counted in Revenue Not Billed / Cost Not Posted
@@ -26,11 +26,13 @@
 //   • Revenue Not Billed: the job has WIP lines with WIP > 0 and its ETD / ETA is more than 3 days
 //     ago; amount = those lines' WIP. Cost Not Posted: accrual lines ≠ 0 and ETD / ETA more than
 //     7 days ago; amount = their accrual. WIP lines are in th_ops_wip. Amounts are in IDR.
+// SAR Thailand — the SAR Thailand Sea Ops dashboard has the same rules as Indonesia (database
+//   sar-th-ops; cross trade in th_ops_crosstrade). Amounts are in THB.
 // All: Financial / Operation Lock Pending = the job has no lock date.
 //
 // Environment: CANADA_URI (cluster holding sar-ca-ops), USA_URI (sar-usa-ops), INDONESIA_URI
-// (sar-id-ops); USA and Indonesia fall back to CANADA_URI when they are on the same cluster.
-// CA_MONGO_DB / USA_MONGO_DB / ID_MONGO_DB rename the databases. A read-only Atlas user is enough.
+// (sar-id-ops), THAILAND_URI (sar-th-ops); the others fall back to CANADA_URI when they are on the
+// same cluster. CA_ / USA_ / ID_ / TH_MONGO_DB rename the databases. A read-only Atlas user is enough.
 
 import { MongoClient } from "mongodb";
 import { authenticate, sendError, HttpError } from "./mongo.js";
@@ -39,6 +41,7 @@ const ENTITIES = {
   canada: { envs: ["CANADA_URI", "CA_MONGO_URI"], db: process.env.CA_MONGO_DB || "sar-ca-ops" },
   usa:    { envs: ["USA_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.USA_MONGO_DB || "sar-usa-ops" },
   indonesia: { envs: ["INDONESIA_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.ID_MONGO_DB || "sar-id-ops" },
+  thailand:  { envs: ["THAILAND_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.TH_MONGO_DB || "sar-th-ops" },
 };
 const TTL_MS = 5 * 60 * 1000;
 
@@ -228,9 +231,13 @@ async function usaData(db) {
   return { jobs, evaJobs, dataRefreshedAt: { jobs: at("lastPush_" + US_JOBS), estimatedVsActual: at("lastPush_" + US_ETDETA) } };
 }
 
-// ---------------------------------------------------------------- SAR Indonesia (sar-id-ops)
+// ---------------------------------------------------------------- SAR Indonesia (sar-id-ops) and Thailand (sar-th-ops)
 
-const ID_JOB_COLLECTIONS = ["th_ops_export", "th_ops_import", "id_ops_crosstrade"];
+// Both sea ops dashboards share one schema (CargoWise exports); only the cross-trade collection differs.
+const SEA_JOB_COLLECTIONS = {
+  indonesia: ["th_ops_export", "th_ops_import", "id_ops_crosstrade"],
+  thailand:  ["th_ops_export", "th_ops_import", "th_ops_crosstrade"],
+};
 const ID_WIP = "th_ops_wip";
 const DAY = 864e5;
 const idDirection = (d) => {   // getRecordDirection in the Indonesia dashboard: 2nd letter of the LOB code
@@ -243,9 +250,9 @@ const newestId = (docs) => docs.reduce((m, d) => {
   return t > m ? t : m;
 }, 0);
 
-async function indonesiaData(db) {
+async function seaOpsData(db, entity) {
   const [jobDocs, wip] = await Promise.all([
-    Promise.all(ID_JOB_COLLECTIONS.map((name) => db.collection(name)
+    Promise.all(SEA_JOB_COLLECTIONS[entity].map((name) => db.collection(name)
       .find({}, { projection: { _id: 1, shipmentId: 1, lob: 1, direction: 1, jobBranch: 1, branch: 1, operator: 1, jobOwner: 1,
                                 originEtd: 1, destinationEta: 1, jobOpenedDate: 1, jobStatus: 1, operationLock: 1,
                                 operationsLockedOn: 1, financialLock: 1, financialsLockedOn: 1 } }).toArray())).then((a) => a.flat()),
@@ -320,8 +327,8 @@ const anyOf = (ids) => ({ $in: [...ids, ...ids.filter((j) => /^\d+$/.test(j)).ma
 async function jobDetails(db, entity, body) {
   const ids = jobIds(body);
   if (!ids.length) return { rows: [] };
-  const names = entity === "usa" ? [US_JOBS] : entity === "indonesia" ? ID_JOB_COLLECTIONS : CA_JOB_COLLECTIONS;
-  const fields = entity === "indonesia" ? ID_JOB_DETAIL_FIELDS : JOB_DETAIL_FIELDS;
+  const names = entity === "usa" ? [US_JOBS] : SEA_JOB_COLLECTIONS[entity] || CA_JOB_COLLECTIONS;
+  const fields = SEA_JOB_COLLECTIONS[entity] ? ID_JOB_DETAIL_FIELDS : JOB_DETAIL_FIELDS;
   const rows = (await Promise.all(names.map((name) => db.collection(name)
     .find({ shipmentId: anyOf(ids) }, { projection: projectionOf(fields) }).toArray()))).flat();
   return { rows };
@@ -331,7 +338,7 @@ async function chargeLines(db, entity, body) {
   const ids = jobIds(body);
   if (!ids.length) return { rows: [] };
   const cost = body.kind === "cost";
-  if (entity === "indonesia") {
+  if (SEA_JOB_COLLECTIONS[entity]) {
     const filter = { shipmentId: anyOf(ids), ...(cost ? { accrual: { $nin: [0, null, ""] } } : { wip: { $gt: 0 } }) };
     return { rows: await db.collection(ID_WIP).find(filter, { projection: projectionOf(ID_WIP_FIELDS) }).toArray() };
   }
@@ -369,7 +376,7 @@ export default async function handler(req, res) {
     const hit = cache.get(entity);
     if (body.refresh || !hit || Date.now() - hit.at > TTL_MS) {
       const db = await getDb(entity);
-      const data = entity === "usa" ? await usaData(db) : entity === "indonesia" ? await indonesiaData(db) : await canadaData(db);
+      const data = entity === "usa" ? await usaData(db) : SEA_JOB_COLLECTIONS[entity] ? await seaOpsData(db, entity) : await canadaData(db);
       cache.set(entity, { payload: { ...data, builtAt: new Date().toISOString() }, at: Date.now() });
     }
     return res.status(200).json(cache.get(entity).payload);

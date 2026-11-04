@@ -373,6 +373,7 @@ const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500 },   // as the Indonesia ops dashboard
+  "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5 },    // as the Thailand ops dashboard
 };
 let company = "SAR Canada";
 const ent = () => ENTITIES[company];
@@ -380,7 +381,7 @@ const loaded = {};   // company -> api response, so switching tabs back doesn't 
 
 const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Amounts are stored in each company's own currency (CAD, IDR, USD). They are shown in USD by default
-// at an exchange rate the viewer can change (1 USD = 1.4 CAD, 1 USD = 17,500 IDR to start), or in
+// at an exchange rate the viewer can change (1 USD = 1.4 CAD, 17,500 IDR, 32.5 THB to start), or in
 // the local currency. Each rate is remembered in this browser only.
 const rateKey = (cur) => cur === "CAD" ? "auditCadPerUsd" : `auditRate_${cur}`;
 const rates = {};
@@ -737,6 +738,7 @@ DRILLS_BY_DATASET.indonesia = {
   cost:  { kind: "cost", amtKey: "accrual",
            cols: colList("shipmentId:Job #;chargeCode:Charge;accrual:Accrual:n;cost:Cost:n;wip:WIP:n;revenue:Revenue:n;" + ID_WIP_TAIL + ID_WIP_REST) },
 };
+DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
 const drills = () => DRILLS_BY_DATASET[ent().dataset];
 const KPI_VIEWS = {
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => !!r.revFlag,  drill: "rev" },
