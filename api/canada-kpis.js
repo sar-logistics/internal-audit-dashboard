@@ -25,8 +25,14 @@ const TTL_MS = 5 * 60 * 1000;
 
 const g = globalThis;
 async function getDb() {
-  const MONGO_URI = process.env.CANADA_URI || process.env.CA_MONGO_URI;
+  // Forgive common paste slips: spaces or new lines, surrounding quotes, a leading "CANADA_URI=".
+  const MONGO_URI = String(process.env.CANADA_URI || process.env.CA_MONGO_URI || "").trim()
+    .replace(/^(CANADA_URI|CA_MONGO_URI)\s*=\s*/, "").replace(/^["']|["']$/g, "").trim();
   if (!MONGO_URI) throw new HttpError(500, "CANADA_URI is not set");
+  if (!/^mongodb(\+srv)?:\/\//.test(MONGO_URI)) {
+    throw new HttpError(500, `CANADA_URI must start with mongodb+srv:// (it starts with "${MONGO_URI.slice(0, 6)}…").`);
+  }
+  if (/<\s*(db_)?password\s*>/i.test(MONGO_URI)) throw new HttpError(500, "CANADA_URI still has the <PASSWORD> placeholder: put the real password in its place.");
   if (!g._caMongo) {
     g._caMongo = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 8000, maxPoolSize: 3 }).connect();
     g._caMongo.catch(() => { g._caMongo = undefined; });
@@ -106,10 +112,13 @@ export default async function handler(req, res) {
 // Turns a MongoDB driver error into a message that says what to fix (no secrets in it).
 function mongoError(err) {
   console.error("canada-kpis:", err);
-  const m = String(err && err.message || "");
+  // Mask any user:password@ the driver might echo back
+  const m = String(err && err.message || "").replace(/\/\/[^/@\s]*@/g, "//***@");
+  const name = String(err && err.name || "");
   if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, "Database sign-in failed: check the user name and password in CANADA_URI.");
-  if (/not authorized|unauthorized/i.test(m)) return new HttpError(500, `The database user in CANADA_URI can't read ${DB_NAME}: give it the read role on ${DB_NAME}.`);
-  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist|IP/i.test(m)) return new HttpError(500, "Can't reach the database: check the cluster address in CANADA_URI and that Atlas Network Access allows Vercel (0.0.0.0/0).");
-  if (/Invalid scheme|URI|connection string/i.test(m)) return new HttpError(500, "CANADA_URI is not a valid MongoDB connection string.");
+  if (/not authorized on|unauthorized/i.test(m)) return new HttpError(500, `The database user in CANADA_URI can't read ${DB_NAME}: give it the read role on ${DB_NAME}.`);
+  if (/unescaped characters|must be escaped|percent-encoded/i.test(m)) return new HttpError(500, "The password in CANADA_URI has special characters (@ : / ? # %) that must be URL-encoded, e.g. @ → %40.");
+  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist/i.test(m)) return new HttpError(500, "Can't reach the database: check the cluster address in CANADA_URI and that Atlas Network Access allows Vercel (0.0.0.0/0).");
+  if (name === "MongoParseError" || name === "MongoAPIError") return new HttpError(500, "CANADA_URI can't be read: " + m.slice(0, 200));
   return new HttpError(500, "Database error: " + m.slice(0, 200));
 }
