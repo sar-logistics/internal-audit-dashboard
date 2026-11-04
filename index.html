@@ -71,7 +71,7 @@
 
   .main { flex: 1; min-width: 0; }
   .topbar { background: var(--card); border-bottom: 1px solid var(--line); padding: 16px 32px; min-height: 70px;
-            display: flex; align-items: center; gap: 14px; }
+            display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .topbar h1 { margin: 0; font-size: 21px; font-weight: 700; }
   .topbar-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
   .btn-refresh { display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff;
@@ -104,7 +104,7 @@
   .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; color: var(--good); }
   /* Branch › Job Owner table (same layout as the Canada ops dashboard's Unbilled Revenue page) */
-  .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: 12px; }
   .filters label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
   .select { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font: inherit;
             font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
@@ -243,6 +243,11 @@
     </div>
     <div class="topbar">
       <h1 id="pageTitle">SAR Canada</h1>
+      <div class="filters" id="btFilters">
+        <label for="btFrom">From</label><select class="select" id="btFrom"></select>
+        <label for="btTo">To</label><select class="select" id="btTo"></select>
+        <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
+      </div>
       <div class="topbar-actions">
         <button class="btn-refresh" id="caRefresh" type="button">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 8V3.5M13.5 8H9"/></svg>
@@ -263,11 +268,6 @@
         <div class="kpi stripe-good kpi-click" data-kpi="ol" tabindex="0" role="button"><div class="label">Operation Lock Pending</div><div class="value" id="kOl">–</div></div>
       </div>
 
-      <div class="filters">
-        <label for="btFrom">From</label><select class="select" id="btFrom"></select>
-        <label for="btTo">To</label><select class="select" id="btTo"></select>
-        <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
-      </div>
       <div class="panel">
         <div class="panel-head">
           <h2 id="btTitle">Branch › Job Owner — Total Jobs Created</h2>
@@ -601,6 +601,7 @@ $("companyTabs").onclick = (e) => {
   $("canadaContent").classList.toggle("hidden", !isCanada);
   $("btReports").classList.toggle("hidden", !isCanada);
   $("caRefresh").classList.toggle("hidden", !isCanada);
+  $("btFilters").classList.toggle("hidden", !isCanada);
   $("coEmpty").classList.toggle("hidden", isCanada);
   $("coEmptyText").textContent = `${co} isn't connected to the audit dashboard yet.`;
 };
