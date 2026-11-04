@@ -11,7 +11,7 @@
 //   • Financial / Operation Lock: jobs in the ca_ops_* job collections that have a lock date
 //     (financialLockDate / financialLock, operationLockDate / operationLock); pending = blank.
 //
-// Environment: CA_MONGO_URI (connection string for the cluster holding sar-ca-ops; a read-only
+// Environment: CANADA_URI (connection string for the cluster holding sar-ca-ops; a read-only
 //              Atlas user is enough), CA_MONGO_DB (default "sar-ca-ops").
 
 import { MongoClient } from "mongodb";
@@ -25,9 +25,10 @@ const TTL_MS = 5 * 60 * 1000;
 
 const g = globalThis;
 async function getDb() {
-  if (!process.env.CA_MONGO_URI) throw new HttpError(500, "CA_MONGO_URI is not set");
+  const MONGO_URI = process.env.CANADA_URI || process.env.CA_MONGO_URI;
+  if (!MONGO_URI) throw new HttpError(500, "CANADA_URI is not set");
   if (!g._caMongo) {
-    g._caMongo = new MongoClient(process.env.CA_MONGO_URI, { serverSelectionTimeoutMS: 8000, maxPoolSize: 3 }).connect();
+    g._caMongo = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 8000, maxPoolSize: 3 }).connect();
     g._caMongo.catch(() => { g._caMongo = undefined; });
   }
   return (await g._caMongo).db(DB_NAME);
@@ -106,9 +107,9 @@ export default async function handler(req, res) {
 function mongoError(err) {
   console.error("canada-kpis:", err);
   const m = String(err && err.message || "");
-  if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, "Database sign-in failed: check the user name and password in CA_MONGO_URI.");
-  if (/not authorized|unauthorized/i.test(m)) return new HttpError(500, `The database user in CA_MONGO_URI can't read ${DB_NAME}: give it the read role on ${DB_NAME}.`);
-  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist|IP/i.test(m)) return new HttpError(500, "Can't reach the database: check the cluster address in CA_MONGO_URI and that Atlas Network Access allows Vercel (0.0.0.0/0).");
-  if (/Invalid scheme|URI|connection string/i.test(m)) return new HttpError(500, "CA_MONGO_URI is not a valid MongoDB connection string.");
+  if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, "Database sign-in failed: check the user name and password in CANADA_URI.");
+  if (/not authorized|unauthorized/i.test(m)) return new HttpError(500, `The database user in CANADA_URI can't read ${DB_NAME}: give it the read role on ${DB_NAME}.`);
+  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist|IP/i.test(m)) return new HttpError(500, "Can't reach the database: check the cluster address in CANADA_URI and that Atlas Network Access allows Vercel (0.0.0.0/0).");
+  if (/Invalid scheme|URI|connection string/i.test(m)) return new HttpError(500, "CANADA_URI is not a valid MongoDB connection string.");
   return new HttpError(500, "Database error: " + m.slice(0, 200));
 }
