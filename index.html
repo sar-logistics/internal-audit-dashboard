@@ -107,10 +107,6 @@
   .btn-soft { display: flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 8px;
               padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); cursor: pointer; }
   .btn-soft:hover { border-color: var(--accent); color: var(--ink); }
-  .seg { display: flex; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
-  .seg button { border: none; background: none; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 12.5px;
-                font-weight: 600; color: var(--ink-soft); cursor: pointer; }
-  .seg button.on { background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff; }
   .switch { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); cursor: pointer; user-select: none; }
   .switch input { display: none; }
   .switch .track { width: 40px; height: 22px; border-radius: 999px; background: #E3E7F0; position: relative; transition: background .15s; }
@@ -175,11 +171,23 @@
       <div class="brand-sub">SAR Internal Audit<br>Dashboard</div>
     </div>
     <div class="greeting" id="greeting"></div>
-    <nav class="nav">
-      <div class="nav-label">Reports</div>
-      <div class="nav-item active" title="Canada">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="6.5"/><path d="M1.5 8h13M8 1.5c2 2 2 11 0 13M8 1.5c-2 2-2 11 0 13"/></svg>
-        <span>Canada</span>
+    <nav class="nav" id="btReports">
+      <div class="nav-label">Canada</div>
+      <div class="nav-item active" data-report="total" title="Total Jobs Created">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><path d="M5.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M1.5 8.5h13"/></svg>
+        <span>Total Jobs Created</span>
+      </div>
+      <div class="nav-item" data-report="open" title="Open Jobs">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg>
+        <span>Open Jobs</span>
+      </div>
+      <div class="nav-item" data-report="rev" title="Revenue Not Billed">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="1.5" width="10" height="13" rx="1.5"/><path d="M5.5 5h5M5.5 8h5M5.5 11h3"/></svg>
+        <span>Revenue Not Billed</span>
+      </div>
+      <div class="nav-item" data-report="cost" title="Cost Not Posted">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V8"/></svg>
+        <span>Cost Not Posted</span>
       </div>
     </nav>
     <div class="sidebar-foot">
@@ -228,12 +236,6 @@
           <span class="count" id="btCount"></span>
           <button class="btn-soft" id="btExpand" type="button">» Expand All</button>
           <button class="btn-soft" id="btCollapse" type="button">« Collapse All</button>
-          <div class="seg" role="group" aria-label="Report" id="btReports">
-            <button type="button" data-report="total" class="on">Total Jobs Created</button>
-            <button type="button" data-report="open">Open Jobs</button>
-            <button type="button" data-report="rev">Revenue Not Billed</button>
-            <button type="button" data-report="cost">Cost Not Posted</button>
-          </div>
           <label class="switch" id="btAmountSwitch"><input type="checkbox" id="btByAmount"><span class="track"></span>View by <b id="btByLbl">Count</b></label>
         </div>
         <div class="tbl-wrap"><table class="bt"><thead id="btHead"></thead><tbody id="btBody"></tbody></table></div>
@@ -422,7 +424,7 @@ function renderBranchTable() {
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
   $("btByLbl").textContent = byAmount ? "Amount" : "Count";
-  document.querySelectorAll("#btReports button").forEach((b) => b.classList.toggle("on", b.dataset.report === bt.report));
+  document.querySelectorAll("#btReports [data-report]").forEach((b) => b.classList.toggle("active", b.dataset.report === bt.report));
 
   const inRange = bt[rep.pool].filter((r) => r.mk !== null && r.mk >= lo && r.mk <= hi && (!lob || r.lobLabel === lob));
   const flagged = inRange.filter(rep.flag);
@@ -475,7 +477,7 @@ $("btBody").onclick = (e) => {
 };
 $("btExpand").onclick = () => { [...bt.jobs, ...bt.eva].forEach((r) => bt.open.add(r.branch)); renderBranchTable(); };
 $("btCollapse").onclick = () => { bt.open.clear(); renderBranchTable(); };
-$("btReports").onclick = (e) => { const b = e.target.closest("button[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
+$("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 
