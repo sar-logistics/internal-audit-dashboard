@@ -410,7 +410,8 @@ const rateOf = (cur) => {
 const isLocalCurrency = () => ent().source !== "USD";
 const currency = () => isLocalCurrency() ? $("btCur").value : "USD";
 const toShown = (v) => isLocalCurrency() && currency() === "USD" ? (Number(v) || 0) / rateOf(ent().source) : (Number(v) || 0);
-const fmtMoney = (v) => `${currency()} ${fmtAmt(toShown(v))}`;
+const curSign = () => currency() === "USD" ? "$" : currency();   // USD shows as $, other currencies by code
+const fmtMoney = (v) => { const n = toShown(v); return currency() === "USD" ? `${n < 0 ? "-" : ""}$${fmtAmt(Math.abs(n))}` : `${currency()} ${fmtAmt(n)}`; };
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {
   const d = iso ? new Date(iso) : null;
@@ -571,7 +572,7 @@ function renderBranchTable() {
   const byAmount = bt.byAmount && !!rep.amtKey;
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
-  $("btByLbl").textContent = byAmount ? `Amount (${currency()})` : "Count";
+  $("btByLbl").textContent = byAmount ? `Amount (${curSign()})` : "Count";
   document.querySelectorAll("#btReports [data-report]").forEach((b) => b.classList.toggle("active", b.dataset.report === bt.report));
 
   const inRange = inFilters(rep.pool);
@@ -651,7 +652,7 @@ function redrawMoney() {
   $("btFx").classList.toggle("hidden", !local || currency() !== "USD");
   renderBranchTable();
   if (!$("kpiModal").classList.contains("hidden") && km.drill) {
-    $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${currency()})` : ""}</th>`).join("")}</tr>`;
+    $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${curSign()})` : ""}</th>`).join("")}</tr>`;
     renderKpiRows();
   }
 }
@@ -797,7 +798,7 @@ async function openDrill(title, drill, summaryRows, subtitle) {
   km.rows = [];
   $("kmTitle").textContent = `${title} — ${subtitle}`;
   $("kmSearch").value = "";
-  $("kmHead").innerHTML = `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${currency()})` : ""}</th>`).join("")}</tr>`;
+  $("kmHead").innerHTML = `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${curSign()})` : ""}</th>`).join("")}</tr>`;
   $("kmBody").innerHTML = `<tr><td class="empty" colspan="${drill.cols.length + 1}">Loading…</td></tr>`;
   $("kmFoot").innerHTML = "";
   $("kmCount").textContent = "";
