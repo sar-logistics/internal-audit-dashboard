@@ -337,7 +337,7 @@
           <span id="admMsg"></span>
         </form>
         <div class="tbl-wrap"><table class="kt adm-tbl">
-          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Last sign-in</th><th>Added by</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th class="num">Sign-ins</th><th>Last sign-in</th><th>Added by</th><th></th></tr></thead>
           <tbody id="admBody"></tbody>
         </table></div>
       </div>
@@ -957,13 +957,13 @@ function showView(view) {
 async function openAdmin() {
   closeKpi();
   showView("admin");
-  $("admBody").innerHTML = `<tr><td class="empty" colspan="8">Loading…</td></tr>`;
+  $("admBody").innerHTML = `<tr><td class="empty" colspan="9">Loading…</td></tr>`;
   try {
     const r = await api("/api/mongo", { dataset: "users" });
     adm.users = r.users || []; adm.breakGlass = r.breakGlass || [];
     renderUsers();
   } catch (e) {
-    if (!["signed out", "no access"].includes(e.message)) $("admBody").innerHTML = `<tr><td class="empty" colspan="8">${esc(e.message)}</td></tr>`;
+    if (!["signed out", "no access"].includes(e.message)) $("admBody").innerHTML = `<tr><td class="empty" colspan="9">${esc(e.message)}</td></tr>`;
   }
 }
 
@@ -973,7 +973,9 @@ function renderUsers() {
   const q = $("admSearch").value.trim().toLowerCase();
   const rows = adm.users.filter((u) => !q || [u.name, u.email, u.role].some((v) => String(v || "").toLowerCase().includes(q)));
   const active = adm.users.filter((u) => u.active !== false).length;
-  $("admCount").textContent = `${fmtInt(adm.users.length)} users · ${fmtInt(active)} active`;
+  const logins = adm.users.reduce((a, u) => a + (Number(u.loginCount) || 0), 0);
+  const n = (k, one, many) => `${fmtInt(k)} ${k === 1 ? one : many}`;
+  $("admCount").textContent = `${n(adm.users.length, "user", "users")} · ${fmtInt(active)} active · ${n(logins, "sign-in", "sign-ins")}`;
   const self = (u) => String(u.email).toLowerCase() === String(me.email).toLowerCase();
   $("admBody").innerHTML = rows.length ? rows.map((u, i) => {
     const isAdmin = /^admin$/i.test(String(u.role || ""));
@@ -982,10 +984,11 @@ function renderUsers() {
       <td>${i + 1}</td><td>${esc(u.name || "")}</td><td>${e}${self(u) ? ' <span class="muted">(you)</span>' : ""}</td>
       <td><select data-act="role" ${self(u) ? "disabled" : ""}><option${isAdmin ? "" : " selected"}>Viewer</option><option${isAdmin ? " selected" : ""}>Admin</option></select></td>
       <td><input type="checkbox" data-act="active" ${u.active !== false ? "checked" : ""} ${self(u) ? "disabled" : ""} aria-label="Active"></td>
+      <td class="num">${fmtInt(u.loginCount || 0)}</td>
       <td class="muted">${fmtSignIn(u.lastLoginAt)}</td>
       <td class="muted">${esc(u.addedBy || "—")}</td>
       <td>${self(u) ? "" : '<button type="button" class="link" data-act="delete">Remove</button>'}</td></tr>`;
-  }).join("") : `<tr><td class="empty" colspan="8">${adm.users.length ? "No users match." : "No users yet. Add the first one above."}</td></tr>`;
+  }).join("") : `<tr><td class="empty" colspan="9">${adm.users.length ? "No users match." : "No users yet. Add the first one above."}</td></tr>`;
 }
 
 function admMsg(text, ok) { $("admMsg").textContent = text; $("admMsg").className = ok ? "ok" : "err"; }

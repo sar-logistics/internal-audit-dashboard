@@ -7,7 +7,7 @@
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
-// per person { email, name, role: "Admin" | "Viewer", active }. Only active users on the list get in.
+// per person { email, name, role: "Admin" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
 // ADMIN_EMAILS always get in as Admin, so the list can't lock everyone out. Without AUDIT_URI the
 // old rule applies: anyone on an allowed domain is a Viewer.
 // The browser signs in with Google (OAuth client in Google Cloud project sar-group-internal-audit)
@@ -140,7 +140,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 async function manageUsers(me, body) {
   const col = await usersCol();
   if (body.dataset === "users") {
-    const users = await col.find({}, { projection: { _id: 0, email: 1, name: 1, role: 1, active: 1, addedBy: 1, addedAt: 1, updatedAt: 1, lastLoginAt: 1 } })
+    const users = await col.find({}, { projection: { _id: 0, email: 1, name: 1, role: 1, active: 1, addedBy: 1, addedAt: 1, updatedAt: 1, lastLoginAt: 1, loginCount: 1 } })
       .sort({ name: 1, email: 1 }).toArray();
     return { users, breakGlass: list(process.env.ADMIN_EMAILS) };
   }
@@ -175,7 +175,7 @@ export default async function handler(req, res) {
     const me = await authenticate(req);
     if (body.dataset === "me") {
       if (process.env.AUDIT_URI) {
-        (await usersCol()).updateOne(emailQuery(me.email), { $set: { lastLoginAt: new Date() } })
+        (await usersCol()).updateOne(emailQuery(me.email), { $set: { lastLoginAt: new Date() }, $inc: { loginCount: 1 } })
           .catch((err) => console.error("lastLoginAt:", err));
       }
       return res.status(200).json(me);
