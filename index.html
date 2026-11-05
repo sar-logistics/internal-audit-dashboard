@@ -671,14 +671,15 @@ function weeksOfMonth(mk) {   // the weeks whose Thursday falls in month mk
   return out;
 }
 // prop: the row's key for this view; first / last: its first and last day; defFrom: the default From for To = now.
-// byMonth: one Month picker instead of From / To; the columns are that month's ISO weeks.
+// byMonth: one Month picker instead of From / To; it gives the month's columns (ISO weeks, or the 1st–15th
+// and 16th–month-end halves).
 const PERIODS = {
-  week:      { prop: "wk", byMonth: true, first: (k) => k * 7 + 4, last: (k) => k * 7 + 10, label: isoLabel,
-               sub: (k) => spanLabel(k * 7 + 4, k * 7 + 10).replace(/ '\d\d$/, "") },
-  fortnight: { prop: "fk", label: (k) => { const m = k >> 1; return k % 2 ? `16–${monthEnd(m)} ${monthLabel(m)}` : `1–15 ${monthLabel(m)}`; },
+  week:      { prop: "wk", byMonth: weeksOfMonth, first: (k) => k * 7 + 4, last: (k) => k * 7 + 10, label: isoLabel,
+               sub: (k) => spanLabel(k * 7 + 4, k * 7 + 10).replace(/ '\d\d$/, ""),
+               monthShort: (mk, lo, hi) => `${PERIODS.month.full(mk)} (${isoLabel(lo).slice(5)}–${isoLabel(hi).slice(5)})` },
+  fortnight: { prop: "fk", byMonth: (mk) => [mk * 2, mk * 2 + 1], label: (k) => { const m = k >> 1; return k % 2 ? `16–${monthEnd(m)} ${monthLabel(m)}` : `1–15 ${monthLabel(m)}`; },
                first: (k) => { const m = k >> 1; return dayNum(new Date(Math.floor(m / 12), m % 12, k % 2 ? 16 : 1)); },
-               last: (k) => { const m = k >> 1; return dayNum(new Date(Math.floor(m / 12), m % 12, k % 2 ? monthEnd(m) : 15)); },
-               defFrom: (now) => now - 11 },
+               last: (k) => { const m = k >> 1; return dayNum(new Date(Math.floor(m / 12), m % 12, k % 2 ? monthEnd(m) : 15)); } },
   month:     { prop: "mk", label: monthLabel, full: (k) => `${MONTHS[k % 12]} ${Math.floor(k / 12)}`,
                defFrom: (now) => now - (now % 12) },
   year:      { prop: "yk", label: String, full: String, defFrom: (now, lo) => lo },
@@ -718,7 +719,7 @@ function setBranchData(jobs, evaJobs) {
 }
 
 // From / To for the picked view: every period from the earliest job to now (or the latest job). Defaults:
-// weekly / fortnightly = the last 12, monthly = Jan of this year → this month, yearly = every year,
+// weekly / fortnightly = a Month picker on this month, monthly = Jan of this year → this month, yearly = every year,
 // custom = 1 Jan of this year → today. keep = keep the picked periods (same view, new data).
 function fillPeriodPickers(keep) {
   const view = curPeriod(), v = PERIODS[view];
@@ -742,7 +743,7 @@ function fillPeriodPickers(keep) {
     const now = monthKey(new Date());
     let lo = now, hi = now;
     for (const r of [...bt.jobs, ...bt.eva]) if (r.mk !== null) { if (r.mk < lo) lo = r.mk; if (r.mk > hi) hi = r.mk; }
-    const cur = +$("btMonth").value, pick = keep && $("btMonth").options.length && !isNaN(cur) ? cur : now;
+    const cur = +$("btMonth").value, pick = $("btMonth").options.length && !isNaN(cur) ? cur : now;   // same month across Weekly / Fortnightly
     const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${PERIODS.month.full(k)}</option>`);
     $("btMonth").innerHTML = opts.join("");
     $("btMonth").value = pick;
@@ -782,10 +783,10 @@ function filterState() {
              range: `${fmtDayNum(lo)} → ${fmtDayNum(hi)}`, short: lo === hi ? fmtDayNum(lo) : `${fmtDayNum(lo)} – ${fmtDayNum(hi)}` };
   }
   if (v.byMonth) {
-    const mk = +$("btMonth").value, cols = weeksOfMonth(mk), lo = cols[0], hi = cols[cols.length - 1];
+    const mk = +$("btMonth").value, cols = v.byMonth(mk), lo = cols[0], hi = cols[cols.length - 1];
     return { prop: v.prop, lo, hi, lob, cols, colProp: v.prop, label: v.label, sub: v.sub,
              range: `${fmtDayNum(v.first(lo))} → ${fmtDayNum(v.last(hi))}`,
-             short: `${PERIODS.month.full(mk)} (${v.label(lo).slice(5)}–${v.label(hi).slice(5)})` };
+             short: v.monthShort ? v.monthShort(mk, lo, hi) : PERIODS.month.full(mk) };
   }
   const from = +$("btFrom").value, to = +$("btTo").value, lo = Math.min(from, to), hi = Math.max(from, to);
   const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
