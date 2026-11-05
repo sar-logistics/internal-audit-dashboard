@@ -178,6 +178,19 @@
   .adm-tbl .muted { color: var(--ink-faint); font-size: 12.5px; }
   .adm-tbl button.link { background: none; border: 0; color: var(--coral); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
   .role-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #EEF2FF; color: #4338CA; }
+  .kt th .cf-btn { border: 0; background: none; padding: 0 0 0 4px; cursor: pointer; color: #C3CAD9; vertical-align: middle; line-height: 0; }
+  .kt th .cf-btn:hover { color: var(--ink-soft); }
+  .kt th .cf-btn.on { color: var(--accent); }
+  .cf-pop { position: fixed; z-index: 70; width: 260px; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+            box-shadow: 0 12px 32px rgba(15,25,45,0.22); display: flex; flex-direction: column; }
+  .cf-pop input[type=text] { margin: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; }
+  .cf-list { max-height: 260px; overflow: auto; padding: 0 6px 6px; }
+  .cf-list label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-size: 13px; border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink); }
+  .cf-list label:hover { background: var(--paper); }
+  .cf-list label.all { font-weight: 600; border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: 4px; }
+  .cf-list .none { padding: 8px 6px; font-size: 13px; color: var(--ink-faint); }
+  .cf-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+  .cf-apply { background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff; border: 0; border-radius: 8px; padding: 7px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
   .modal { position: fixed; inset: 0; z-index: 50; background: rgba(15,25,45,0.45); display: grid; place-items: center; padding: 24px; }
   .modal-box { background: var(--card); border-radius: 14px; width: min(1400px, 100%); max-height: 85vh; display: flex; flex-direction: column;
                box-shadow: 0 24px 60px rgba(0,0,0,0.3); overflow: hidden; }
@@ -363,12 +376,17 @@
 
   </div>
 
+  <div class="cf-pop hidden" id="cfPop" role="dialog" aria-label="Column filter">
+    <input type="text" id="cfSearch" placeholder="Search…" aria-label="Search values">
+    <div class="cf-list" id="cfList"></div>
+    <div class="cf-foot"><button type="button" class="btn-soft" id="cfReset">Reset</button><button type="button" class="cf-apply" id="cfApply">Apply</button></div>
+  </div>
+
   <div class="modal hidden" id="kpiModal" role="dialog" aria-modal="true" aria-labelledby="kmTitle">
     <div class="modal-box">
       <div class="modal-head">
         <h3 id="kmTitle"></h3>
         <span class="count" id="kmCount"></span>
-        <input class="km-search" id="kmSearch" type="search" placeholder="Search job, branch, owner…" aria-label="Search">
         <button class="km-close" id="kmClose" type="button" aria-label="Close">×</button>
       </div>
       <div class="modal-body"><table class="kt"><thead id="kmHead"></thead><tbody id="kmBody"></tbody><tfoot id="kmFoot"></tfoot></table></div>
@@ -728,7 +746,8 @@ function redrawMoney() {
   $("btFx").classList.toggle("hidden", !local || currency() !== "USD");
   renderBranchTable();
   if (!$("kpiModal").classList.contains("hidden") && km.drill) {
-    $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}</th>`).join("")}</tr>`;
+    clearMoneyFilters();
+    $("kmHead").innerHTML = kmHeadHtml(km.drill);
     renderKpiRows();
   }
 }
@@ -853,7 +872,7 @@ const KPI_VIEWS = {
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => !!r.revFlag,  drill: "rev" },
   uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => !!r.costFlag, drill: "cost" },
 };
-const km = { rows: [], drill: null, req: 0 };
+const km = { rows: [], drill: null, req: 0, filters: {} };
 
 function openKpi(key) {
   const v = KPI_VIEWS[key];
@@ -875,8 +894,9 @@ async function openDrill(title, drill, summaryRows, subtitle) {
   km.drill = drill;
   km.rows = [];
   $("kmTitle").textContent = `${title} — ${subtitle}`;
-  $("kmSearch").value = "";
-  $("kmHead").innerHTML = `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}</th>`).join("")}</tr>`;
+  km.filters = {};
+  closeColFilter();
+  $("kmHead").innerHTML = kmHeadHtml(drill);
   $("kmBody").innerHTML = `<tr><td class="empty" colspan="${drill.cols.length + 1}">Loading…</td></tr>`;
   $("kmFoot").innerHTML = "";
   $("kmCount").textContent = "";
@@ -905,25 +925,28 @@ async function openDrill(title, drill, summaryRows, subtitle) {
   }
 }
 
-function cellText(c, r) {
+function cellValue(c, r) {
   const v = r[c.key];
-  if (c.date) return esc(fmtDay(v));
+  if (c.date) return fmtDay(v);
   if (c.num) return v === undefined || v === null || v === "" ? "" : fmtMoney(v);
-  return esc(v ?? "");
+  return String(v ?? "");
 }
+const cellText = (c, r) => esc(cellValue(c, r));
 
 function renderKpiRows() {
-  const d = km.drill, q = $("kmSearch").value.trim().toLowerCase();
+  const d = km.drill;
   if (!d) return;
-  const rows = q ? km.rows.filter((r) => d.cols.some((c) => String(r[c.key] ?? "").toLowerCase().includes(q))) : km.rows;
+  const filtered = Object.keys(km.filters).length > 0;
+  const rows = filteredRows();
   const jobs = (n) => `${fmtInt(n)} ${n === 1 ? "job" : "jobs"}`;
   const nJobs = new Set(rows.map((r) => r.shipmentId)).size;
   const what = d.kind === "jobs" ? jobs(rows.length) : `${fmtInt(rows.length)} charge ${rows.length === 1 ? "line" : "lines"} · ${jobs(nJobs)}`;
-  $("kmCount").textContent = q ? `${what} match` : what;
+  $("kmCount").textContent = filtered ? `${what} (filtered)` : what;
   $("kmBody").innerHTML = rows.length
     ? rows.map((r, i) => `<tr><td>${i + 1}</td>${d.cols.map((c) => `<td class="${c.num ? "num" : ""}">${cellText(c, r)}</td>`).join("")}</tr>`).join("")
-    : `<tr><td class="empty" colspan="${d.cols.length + 1}">No jobs.</td></tr>`;
-  // Grand Total row: every amount column summed over the rows shown (search applied), as in the CA ops detail view
+    : `<tr><td class="empty" colspan="${d.cols.length + 1}">${filtered ? "No rows match the filters." : "No jobs."}</td></tr>`;
+  document.querySelectorAll("#kmHead .cf-btn").forEach((b) => b.classList.toggle("on", !!km.filters[b.dataset.key]));
+  // Grand Total row: every amount column summed over the rows shown (filters applied), as in the CA ops detail view
   const sumCol = (c) => {
     let sum = 0, any = false;
     rows.forEach((r) => { const v = parseFloat(r[c.key]); if (!isNaN(v)) { sum += v; any = true; } });
@@ -935,15 +958,95 @@ function renderKpiRows() {
     : "";
 }
 
-function closeKpi() { km.req++; $("kpiModal").classList.add("hidden"); }
+function closeKpi() { km.req++; closeColFilter(); $("kpiModal").classList.add("hidden"); }
 document.querySelectorAll(".kpi-click").forEach((card) => {
   card.onclick = () => openKpi(card.dataset.kpi);
   card.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openKpi(card.dataset.kpi); } };
 });
 $("kmClose").onclick = closeKpi;
 $("kpiModal").onclick = (e) => { if (e.target === $("kpiModal")) closeKpi(); };
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("kpiModal").classList.contains("hidden")) closeKpi(); });
-$("kmSearch").oninput = renderKpiRows;
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("cfPop").classList.contains("hidden")) closeColFilter();
+  else if (!$("kpiModal").classList.contains("hidden")) closeKpi();
+});
+
+// ------------------------------------------------------------ column filters (pop-up headers)
+// Each header has a filter button: tick the values to keep, as in the CA ops detail view.
+// km.filters: column key -> Set of shown values kept; a column with no entry is not filtered.
+const FILTER_ICON = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 2.5h13L9.5 8.6V13l-3 1.5V8.6z"/></svg>`;
+const cfState = { key: null, values: [] };
+const BLANK = "(Blanks)";
+
+function kmHeadHtml(drill) {
+  return `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}<button type="button" class="cf-btn" data-key="${c.key}" aria-label="Filter ${esc(c.label)}" title="Filter ${esc(c.label)}">${FILTER_ICON}</button></th>`).join("")}</tr>`;
+}
+const shownValue = (c, r) => cellValue(c, r) || BLANK;
+function filteredRows(skipKey) {
+  const cols = km.drill.cols.filter((c) => km.filters[c.key] && c.key !== skipKey);
+  return cols.length ? km.rows.filter((r) => cols.every((c) => km.filters[c.key].has(shownValue(c, r)))) : km.rows;
+}
+function clearMoneyFilters() {   // shown amounts change with the currency, so their filters can't carry over
+  if (km.drill) km.drill.cols.forEach((c) => { if (c.num) delete km.filters[c.key]; });
+  closeColFilter();
+}
+
+function openColFilter(btn) {
+  const c = km.drill.cols.find((x) => x.key === btn.dataset.key);
+  if (!c) return;
+  if (cfState.key === c.key && !$("cfPop").classList.contains("hidden")) return closeColFilter();
+  // Values from the rows the other columns' filters leave, like Excel
+  const vals = [...new Set(filteredRows(c.key).map((r) => shownValue(c, r)))];
+  const numOf = (v) => parseFloat(String(v).replace(/[^0-9.-]/g, ""));
+  vals.sort((a, b) => a === BLANK ? 1 : b === BLANK ? -1 : c.num ? numOf(a) - numOf(b) : a.localeCompare(b, undefined, { numeric: true }));
+  cfState.key = c.key;
+  cfState.values = vals;
+  const keep = km.filters[c.key];
+  $("cfSearch").value = "";
+  $("cfSearch").placeholder = `Search ${c.label}…`;
+  $("cfList").innerHTML = `<label class="all"><input type="checkbox" data-all> (Select all)</label>` +
+    vals.map((v, i) => `<label data-v="${esc(v.toLowerCase())}"><input type="checkbox" data-i="${i}" ${!keep || keep.has(v) ? "checked" : ""}> ${esc(v)}</label>`).join("") +
+    `<div class="none hidden">No matches</div>`;
+  syncSelectAll();
+  const pop = $("cfPop"), rect = btn.getBoundingClientRect();
+  pop.classList.remove("hidden");
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(rect.left - 8, innerWidth - w - 8)) + "px";
+  pop.style.top = (rect.bottom + 6 + h > innerHeight - 8 ? Math.max(8, rect.top - h - 6) : rect.bottom + 6) + "px";
+  $("cfSearch").focus();
+}
+function closeColFilter() { $("cfPop").classList.add("hidden"); cfState.key = null; }
+const cfBoxes = (visibleOnly) => [...$("cfList").querySelectorAll("input[data-i]")].filter((b) => !visibleOnly || !b.closest("label").classList.contains("hidden"));
+function syncSelectAll() {
+  const boxes = cfBoxes(true), all = $("cfList").querySelector("input[data-all]");
+  all.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+  all.indeterminate = !all.checked && boxes.some((b) => b.checked);
+}
+
+$("kmHead").onclick = (e) => { const b = e.target.closest(".cf-btn"); if (b) { e.stopPropagation(); openColFilter(b); } };
+$("cfSearch").oninput = () => {
+  const q = $("cfSearch").value.trim().toLowerCase();
+  let shown = 0;
+  $("cfList").querySelectorAll("label[data-v]").forEach((l) => { const on = !q || l.dataset.v.includes(q); l.classList.toggle("hidden", !on); if (on) shown++; });
+  $("cfList").querySelector(".none").classList.toggle("hidden", shown > 0);
+  syncSelectAll();
+};
+$("cfList").onchange = (e) => {
+  if (e.target.matches("input[data-all]")) cfBoxes(true).forEach((b) => { b.checked = e.target.checked; });
+  syncSelectAll();
+};
+$("cfApply").onclick = () => {
+  const q = $("cfSearch").value.trim();
+  // With a search typed, keep only the ticked values that match it (as Excel does)
+  const kept = cfBoxes(!!q).filter((b) => b.checked).map((b) => cfState.values[+b.dataset.i]);
+  if (!q && kept.length === cfState.values.length) delete km.filters[cfState.key];
+  else km.filters[cfState.key] = new Set(kept);
+  closeColFilter();
+  renderKpiRows();
+};
+$("cfReset").onclick = () => { delete km.filters[cfState.key]; closeColFilter(); renderKpiRows(); };
+document.addEventListener("click", (e) => { if (!$("cfPop").classList.contains("hidden") && !e.target.closest("#cfPop, .cf-btn")) closeColFilter(); });
+$("kpiModal").querySelector(".modal-body").addEventListener("scroll", closeColFilter);
 
 // ============================================================ company tabs
 // Companies in ENTITIES have data; the others show a placeholder until they are connected.
