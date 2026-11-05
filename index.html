@@ -464,7 +464,6 @@ const rateOf = (cur) => {
 const isLocalCurrency = () => ent().source !== "USD";
 const currency = () => isLocalCurrency() ? $("btCur").value : "USD";
 const toShown = (v) => isLocalCurrency() && currency() === "USD" ? (Number(v) || 0) / rateOf(ent().source) : (Number(v) || 0);
-const curSign = () => currency() === "USD" ? "$" : currency();   // USD shows as $, other currencies by code
 const fmtMoney = (v) => { const n = toShown(v); return currency() === "USD" ? `${n < 0 ? "-" : ""}$${fmtAmt(Math.abs(n))}` : `${currency()} ${fmtAmt(n)}`; };
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {
@@ -633,7 +632,7 @@ function renderBranchTable() {
   const byAmount = bt.byAmount && !!rep.amtKey;
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
-  $("btByLbl").textContent = byAmount ? `Amount (${curSign()})` : "Count";
+  $("btByLbl").textContent = byAmount ? "Amount" : "Count";
   document.querySelectorAll("#btReports [data-report]").forEach((b) => b.classList.toggle("active", b.dataset.report === bt.report));
 
   const inRange = inFilters(rep.pool);
@@ -643,7 +642,7 @@ function renderBranchTable() {
 
   const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
   const wt = (r) => byAmount ? (Number(r[rep.amtKey]) || 0) : 1;
-  const fmt = (n) => byAmount ? fmtAmt(toShown(n)) : fmtInt(n);
+  const fmt = (n) => byAmount ? fmtMoney(n) : fmtInt(n);
   const blank = () => ({ total: 0, by: {} });
   const add = (t, r) => { const w = wt(r); t.total += w; t.by[r.mk] = (t.by[r.mk] || 0) + w; };
 
@@ -713,7 +712,7 @@ function redrawMoney() {
   $("btFx").classList.toggle("hidden", !local || currency() !== "USD");
   renderBranchTable();
   if (!$("kpiModal").classList.contains("hidden") && km.drill) {
-    $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${curSign()})` : ""}</th>`).join("")}</tr>`;
+    $("kmHead").innerHTML = `<tr><th>#</th>${km.drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}</th>`).join("")}</tr>`;
     renderKpiRows();
   }
 }
@@ -859,7 +858,7 @@ async function openDrill(title, drill, summaryRows, subtitle) {
   km.rows = [];
   $("kmTitle").textContent = `${title} — ${subtitle}`;
   $("kmSearch").value = "";
-  $("kmHead").innerHTML = `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}${c.num ? ` (${curSign()})` : ""}</th>`).join("")}</tr>`;
+  $("kmHead").innerHTML = `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}</th>`).join("")}</tr>`;
   $("kmBody").innerHTML = `<tr><td class="empty" colspan="${drill.cols.length + 1}">Loading…</td></tr>`;
   $("kmFoot").innerHTML = "";
   $("kmCount").textContent = "";
@@ -891,7 +890,7 @@ async function openDrill(title, drill, summaryRows, subtitle) {
 function cellText(c, r) {
   const v = r[c.key];
   if (c.date) return esc(fmtDay(v));
-  if (c.num) return v === undefined || v === null || v === "" ? "" : fmtAmt(toShown(v));
+  if (c.num) return v === undefined || v === null || v === "" ? "" : fmtMoney(v);
   return esc(v ?? "");
 }
 
@@ -910,7 +909,7 @@ function renderKpiRows() {
   const sumCol = (c) => {
     let sum = 0, any = false;
     rows.forEach((r) => { const v = parseFloat(r[c.key]); if (!isNaN(v)) { sum += v; any = true; } });
-    return any ? fmtAmt(toShown(sum)) : "";
+    return any ? fmtMoney(sum) : "";
   };
   $("kmFoot").innerHTML = rows.length && d.cols.some((c) => c.num)
     ? `<tr><td></td>${d.cols.map((c, i) => i === 0 ? "<td>Grand Total</td>"
