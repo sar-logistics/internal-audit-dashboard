@@ -181,6 +181,12 @@
   .kt th .cf-btn { border: 0; background: none; padding: 0 0 0 4px; cursor: pointer; color: #C3CAD9; vertical-align: middle; line-height: 0; }
   .kt th .cf-btn:hover { color: var(--ink-soft); }
   .kt th .cf-btn.on { color: var(--accent); }
+  .kt th[data-sort] { cursor: pointer; user-select: none; }
+  .kt th[data-sort]:hover { color: var(--ink-soft); }
+  .kt th .sort-ar { display: inline-block; width: 10px; margin-left: 3px; color: var(--accent); }
+  .cf-sort { display: flex; gap: 6px; padding: 10px 10px 0; }
+  .cf-sort button { flex: 1; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--ink-soft); }
+  .cf-sort button:hover, .cf-sort button.on { border-color: var(--accent); color: var(--accent); }
   .cf-pop { position: fixed; z-index: 70; width: 260px; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
             box-shadow: 0 12px 32px rgba(15,25,45,0.22); display: flex; flex-direction: column; }
   .cf-pop input[type=text] { margin: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; }
@@ -212,6 +218,8 @@
   .kt tfoot td:nth-child(2) { background: #F0F4FF; }
   .kt tfoot td { position: sticky; bottom: 0; background: #F0F4FF; font-weight: 800; border-top: 2px solid #2C4E82; }
   .kt .empty { text-align: center; color: var(--ink-faint); padding: 28px; }
+  /* Detail view (pop-up): every column centred, amounts included */
+  #kpiModal .kt th, #kpiModal .kt td, #kpiModal .kt .num { text-align: center; }
 
   #caError { margin: 0 0 16px; padding: 10px 12px; border-radius: 8px; font-size: 13px; background: #FEF3F2; color: #B42318; }
 
@@ -378,6 +386,7 @@
   </div>
 
   <div class="cf-pop hidden" id="cfPop" role="dialog" aria-label="Column filter">
+    <div class="cf-sort"><button type="button" id="cfAsc">↑ Sort A → Z</button><button type="button" id="cfDesc">↓ Sort Z → A</button></div>
     <input type="text" id="cfSearch" placeholder="Search…" aria-label="Search values">
     <div class="cf-list" id="cfList"></div>
     <div class="cf-foot"><button type="button" class="btn-soft" id="cfReset">Reset</button><button type="button" class="cf-apply" id="cfApply">Apply</button></div>
@@ -875,7 +884,7 @@ const KPI_VIEWS = {
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => !!r.revFlag,  drill: "rev" },
   uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => !!r.costFlag, drill: "cost" },
 };
-const km = { rows: [], drill: null, req: 0, filters: {} };
+const km = { rows: [], drill: null, req: 0, filters: {}, sort: null };   // sort: { key, dir: 1 | -1 }
 
 function openKpi(key) {
   const v = KPI_VIEWS[key];
@@ -898,6 +907,7 @@ async function openDrill(title, drill, summaryRows, subtitle) {
   km.rows = [];
   $("kmTitle").textContent = `${title} — ${subtitle}`;
   km.filters = {};
+  km.sort = null;
   closeColFilter();
   $("kmHead").innerHTML = kmHeadHtml(drill);
   $("kmBody").innerHTML = `<tr><td class="empty" colspan="${drill.cols.length + 1}">Loading…</td></tr>`;
@@ -940,7 +950,7 @@ function renderKpiRows() {
   const d = km.drill;
   if (!d) return;
   const filtered = Object.keys(km.filters).length > 0;
-  const rows = filteredRows();
+  const rows = sortRows(filteredRows());
   const jobs = (n) => `${fmtInt(n)} ${n === 1 ? "job" : "jobs"}`;
   const nJobs = new Set(rows.map((r) => r.shipmentId)).size;
   const what = d.kind === "jobs" ? jobs(rows.length) : `${fmtInt(rows.length)} charge ${rows.length === 1 ? "line" : "lines"} · ${jobs(nJobs)}`;
@@ -949,6 +959,11 @@ function renderKpiRows() {
     ? rows.map((r, i) => `<tr><td>${i + 1}</td>${d.cols.map((c) => `<td class="${c.num ? "num" : ""}">${cellText(c, r)}</td>`).join("")}</tr>`).join("")
     : `<tr><td class="empty" colspan="${d.cols.length + 1}">${filtered ? "No rows match the filters." : "No jobs."}</td></tr>`;
   document.querySelectorAll("#kmHead .cf-btn").forEach((b) => b.classList.toggle("on", !!km.filters[b.dataset.key]));
+  document.querySelectorAll("#kmHead th[data-sort]").forEach((th) => {
+    const on = km.sort && km.sort.key === th.dataset.sort;
+    th.querySelector(".sort-ar").textContent = on ? (km.sort.dir > 0 ? "↑" : "↓") : "";
+    th.setAttribute("aria-sort", on ? (km.sort.dir > 0 ? "ascending" : "descending") : "none");
+  });
   // Grand Total row: every amount column summed over the rows shown (filters applied), as in the CA ops detail view
   const sumCol = (c) => {
     let sum = 0, any = false;
@@ -982,7 +997,7 @@ const cfState = { key: null, values: [] };
 const BLANK = "(Blanks)";
 
 function kmHeadHtml(drill) {
-  return `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}">${c.label}<button type="button" class="cf-btn" data-key="${c.key}" aria-label="Filter ${esc(c.label)}" title="Filter ${esc(c.label)}">${FILTER_ICON}</button></th>`).join("")}</tr>`;
+  return `<tr><th>#</th>${drill.cols.map((c) => `<th class="${c.num ? "num" : ""}" data-sort="${c.key}" title="Sort by ${esc(c.label)}">${c.label}<span class="sort-ar"></span><button type="button" class="cf-btn" data-key="${c.key}" aria-label="Filter ${esc(c.label)}" title="Filter ${esc(c.label)}">${FILTER_ICON}</button></th>`).join("")}</tr>`;
 }
 const shownValue = (c, r) => cellValue(c, r) || BLANK;
 function filteredRows(skipKey) {
@@ -1007,6 +1022,11 @@ function openColFilter(btn) {
   const keep = km.filters[c.key];
   $("cfSearch").value = "";
   $("cfSearch").placeholder = `Search ${c.label}…`;
+  const sorted = km.sort && km.sort.key === c.key ? km.sort.dir : 0;
+  $("cfAsc").classList.toggle("on", sorted === 1);
+  $("cfDesc").classList.toggle("on", sorted === -1);
+  $("cfAsc").textContent = c.num ? "↑ Smallest first" : c.date ? "↑ Oldest first" : "↑ Sort A → Z";
+  $("cfDesc").textContent = c.num ? "↓ Largest first" : c.date ? "↓ Newest first" : "↓ Sort Z → A";
   $("cfList").innerHTML = `<label class="all"><input type="checkbox" data-all> (Select all)</label>` +
     vals.map((v, i) => `<label data-v="${esc(v.toLowerCase())}"><input type="checkbox" data-i="${i}" ${!keep || keep.has(v) ? "checked" : ""}> ${esc(v)}</label>`).join("") +
     `<div class="none hidden">No matches</div>`;
@@ -1026,7 +1046,36 @@ function syncSelectAll() {
   all.indeterminate = !all.checked && boxes.some((b) => b.checked);
 }
 
-$("kmHead").onclick = (e) => { const b = e.target.closest(".cf-btn"); if (b) { e.stopPropagation(); openColFilter(b); } };
+// Sorting: numbers by value, dates by day, text A → Z (natural, so J2 comes before J10); blanks always last
+function sortRows(rows) {
+  if (!km.sort) return rows;
+  const c = km.drill.cols.find((x) => x.key === km.sort.key);
+  if (!c) return rows;
+  const keyOf = (r) => {
+    const v = r[c.key];
+    if (v === undefined || v === null || String(v).trim() === "") return null;
+    if (c.num) { const n = parseFloat(v); return isNaN(n) ? null : n; }
+    if (c.date) { const d = parseDay(v); return d ? d.getTime() : null; }
+    return String(v);
+  };
+  const dir = km.sort.dir;
+  return rows.map((r) => [keyOf(r), r]).sort(([a], [b]) => {
+    if (a === null || b === null) return a === null ? (b === null ? 0 : 1) : -1;
+    return dir * (typeof a === "number" ? a - b : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+  }).map(([, r]) => r);
+}
+function setSort(key, dir) { km.sort = dir ? { key, dir } : null; renderKpiRows(); }
+
+$("kmHead").onclick = (e) => {
+  const b = e.target.closest(".cf-btn");
+  if (b) { e.stopPropagation(); openColFilter(b); return; }
+  const th = e.target.closest("th[data-sort]");
+  if (!th) return;
+  const k = th.dataset.sort, cur = km.sort && km.sort.key === k ? km.sort.dir : 0;
+  setSort(k, cur === 0 ? 1 : cur === 1 ? -1 : 0);
+};
+$("cfAsc").onclick = () => { const k = cfState.key; closeColFilter(); setSort(k, 1); };
+$("cfDesc").onclick = () => { const k = cfState.key; closeColFilter(); setSort(k, -1); };
 $("cfSearch").oninput = () => {
   const q = $("cfSearch").value.trim().toLowerCase();
   let shown = 0;
