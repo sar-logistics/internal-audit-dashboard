@@ -222,6 +222,16 @@
   .cf-pop { position: fixed; z-index: 70; width: 270px; background: var(--card); border: 1px solid var(--line); border-top: 3px solid #2C4E82; border-radius: 10px;
             box-shadow: 0 12px 32px rgba(15,25,45,0.22); display: flex; flex-direction: column; }
   .cf-pop input[type=text] { margin: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; }
+  /* styled menu for the dropdowns (the browser's own option list can't be styled) */
+  .dd-pop { position: fixed; z-index: 80; min-width: 150px; max-height: 320px; overflow: auto; padding: 6px; background: var(--card);
+            border: 1px solid var(--line); border-top: 3px solid #2C4E82; border-radius: 12px;
+            box-shadow: 0 14px 34px rgba(28,33,54,0.18), 0 2px 6px rgba(28,33,54,0.08); }
+  .dd-pop .dd-opt { display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 10px; border-radius: 8px; font-size: 13px;
+                    font-weight: 600; color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .dd-pop .dd-opt::before { content: ""; width: 14px; flex-shrink: 0; }
+  .dd-pop .dd-opt.hot { background: #EEF3FC; color: #2C4E82; }
+  .dd-pop .dd-opt.on { background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff; }
+  .dd-pop .dd-opt.on::before { content: "✓"; font-size: 12px; }
   .cf-list { max-height: 260px; overflow: auto; padding: 0 6px 6px; }
   .cf-list label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-size: 13px; border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink); }
   .cf-list label:hover { background: var(--paper); }
@@ -423,6 +433,7 @@
 
   </div>
 
+  <div class="dd-pop hidden" id="ddPop" role="listbox"></div>
   <div class="cf-pop hidden" id="cfPop" role="dialog" aria-label="Column filter">
     <div class="cf-sort"><button type="button" id="cfAsc">↑ Sort A → Z</button><button type="button" id="cfDesc">↓ Sort Z → A</button></div>
     <input type="text" id="cfSearch" placeholder="Search…" aria-label="Search values">
@@ -1276,6 +1287,75 @@ $("sbBackdrop").onclick = () => setSidebar(true, false);
 document.querySelector(".sidebar").addEventListener("click", (e) => {
   if (smallScreen.matches && e.target.closest(".nav-item")) setSidebar(true, false);
 });
+
+// Dropdowns: a mouse click opens a styled menu instead of the browser's own list. The <select> stays the
+// source of truth: picking sets its value and fires "change", so every handler works as before. Touch
+// screens keep the phone's native picker.
+const DD_SEL = ".select, .adm-add select, .adm-tbl select";
+const dd = { sel: null, hot: -1 };
+function closeDropdown() {
+  if (!dd.sel) return;
+  $("ddPop").classList.add("hidden");
+  dd.sel = null;
+}
+function paintDropdown() {
+  [...$("ddPop").children].forEach((el, i) => {
+    el.classList.toggle("hot", i === dd.hot);
+    if (i === dd.hot) el.scrollIntoView({ block: "nearest" });
+  });
+}
+function openDropdown(sel) {
+  dd.sel = sel; dd.hot = sel.selectedIndex;
+  const pop = $("ddPop");
+  pop.innerHTML = [...sel.options].map((o, i) =>
+    `<div class="dd-opt${i === sel.selectedIndex ? " on" : ""}" role="option" data-i="${i}" aria-selected="${i === sel.selectedIndex}">${esc(o.text)}</div>`).join("");
+  pop.classList.remove("hidden");
+  const r = sel.getBoundingClientRect();
+  pop.style.minWidth = `${r.width}px`;
+  const below = innerHeight - r.bottom - 8, h = Math.min(pop.scrollHeight, 320);
+  pop.style.top = `${below >= h || below >= r.top ? r.bottom + 6 : Math.max(8, r.top - h - 6)}px`;
+  pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8))}px`;
+  paintDropdown();
+}
+function pickDropdown(i) {
+  const sel = dd.sel;
+  closeDropdown();
+  sel.focus();
+  if (i < 0 || i === sel.selectedIndex) return;
+  sel.selectedIndex = i;
+  sel.dispatchEvent(new Event("change", { bubbles: true }));
+}
+const finePointer = window.matchMedia("(pointer: fine)");
+document.addEventListener("mousedown", (e) => {
+  const sel = e.target.closest?.(DD_SEL);
+  if (sel && finePointer.matches && !sel.disabled) {
+    e.preventDefault();   // stops the browser's own list
+    const again = dd.sel === sel;
+    closeDropdown();
+    if (!again) { sel.focus(); openDropdown(sel); }
+  } else if (dd.sel && !e.target.closest("#ddPop")) closeDropdown();
+});
+$("ddPop").addEventListener("mousedown", (e) => e.preventDefault());   // keep focus on the select
+$("ddPop").addEventListener("click", (e) => { const o = e.target.closest(".dd-opt"); if (o) pickDropdown(+o.dataset.i); });
+$("ddPop").addEventListener("mousemove", (e) => {
+  const o = e.target.closest(".dd-opt");
+  if (o && +o.dataset.i !== dd.hot) { dd.hot = +o.dataset.i; [...$("ddPop").children].forEach((el, i) => el.classList.toggle("hot", i === dd.hot)); }
+});
+document.addEventListener("keydown", (e) => {
+  if (!dd.sel) {
+    const sel = e.target.closest?.(DD_SEL);   // Enter / Space / Alt+↓ on a focused dropdown opens the menu
+    if (sel && finePointer.matches && (e.key === "Enter" || e.key === " " || (e.altKey && e.key === "ArrowDown"))) { e.preventDefault(); openDropdown(sel); }
+    return;
+  }
+  const n = dd.sel.options.length;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); dd.hot = Math.max(0, Math.min(n - 1, dd.hot + (e.key === "ArrowDown" ? 1 : -1))); paintDropdown(); }
+  else if (e.key === "Home" || e.key === "End") { e.preventDefault(); dd.hot = e.key === "Home" ? 0 : n - 1; paintDropdown(); }
+  else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickDropdown(dd.hot); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); const sel = dd.sel; closeDropdown(); sel.focus(); }
+  else if (e.key === "Tab") closeDropdown();
+}, true);
+addEventListener("resize", closeDropdown);
+addEventListener("scroll", (e) => { if (!e.target.closest?.("#ddPop") && e.target !== $("ddPop")) closeDropdown(); }, true);
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
