@@ -335,7 +335,7 @@
       <button type="button" data-co="SAR Indonesia">SAR Indonesia</button>
     </div>
     <div class="topbar">
-      <h1 id="pageTitle">SAR Canada</h1>
+      <h1 id="pageTitle" class="hidden">Admin Panel</h1>
       <div class="filters" id="btFilters">
         <label for="btFrom">From</label><select class="select" id="btFrom"></select>
         <label for="btTo">To</label><select class="select" id="btTo"></select>
@@ -1136,7 +1136,6 @@ $("companyTabs").onclick = (e) => {
   const co = b.dataset.co, connected = !!ENTITIES[co];
   showView("data");
   document.querySelectorAll("#companyTabs button").forEach((x) => x.classList.toggle("on", x === b));
-  $("pageTitle").textContent = co;
   $("canadaContent").classList.toggle("hidden", !connected);
   $("btReports").classList.toggle("hidden", !connected);
   $("caRefresh").classList.toggle("hidden", !connected);
@@ -1166,7 +1165,7 @@ function showView(view) {
   document.querySelectorAll("#btReports [data-report]").forEach((x) => x.classList.toggle("active", !admin && x.dataset.report === bt.report));
   const co = admin ? null : document.querySelector("#companyTabs button.on")?.dataset.co || company;
   const connected = !admin && !!ENTITIES[co];
-  $("pageTitle").textContent = admin ? "Admin Panel" : co;
+  $("pageTitle").classList.toggle("hidden", !admin);   // company views show only the filters; the tab names the company
   $("canadaContent").classList.toggle("hidden", !connected);
   $("coEmpty").classList.toggle("hidden", admin || connected);
   $("btFilters").classList.toggle("hidden", !connected);
