@@ -136,11 +136,21 @@
   /* Branch › Job Owner table (same layout as the Canada ops dashboard's Unbilled Revenue page) */
   .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: 12px; }
   .filters label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
-  .select { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font: inherit;
-            font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+  /* dropdowns: own chevron, soft shadow, blue hover / focus ring (filters, currency, Admin Panel role) */
+  .select, .adm-add select, .adm-tbl select {
+    -webkit-appearance: none; appearance: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--ink);
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%232C4E82' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E") no-repeat right 12px center / 12px, linear-gradient(180deg, #FFFFFF, #F6F8FC);
+    border: 1px solid #D5DCEA; border-radius: 999px; padding: 8px 34px 8px 14px; min-width: 96px;
+    box-shadow: 0 1px 2px rgba(28,33,54,0.06); transition: border-color .15s, box-shadow .15s; }
+  .select:hover, .adm-add select:hover, .adm-tbl select:hover:not(:disabled) { border-color: #6488D6; box-shadow: 0 2px 6px #2C4E8222; }
+  .select:focus-visible, .adm-add select:focus-visible, .adm-tbl select:focus-visible,
+  .fx input:focus-visible { outline: none; border-color: #2C4E82; box-shadow: 0 0 0 3px #6488D640; }
+  .adm-tbl select:disabled { cursor: default; opacity: .55; }
+  .select option, .adm-add select option, .adm-tbl select option { font-weight: 600; color: var(--ink); background: #fff; }
   .fx { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
-  .fx input { width: 70px; border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; font: inherit; font-size: 13px;
-              font-weight: 600; color: var(--ink); text-align: right; }
+  .fx input { width: 70px; border: 1px solid #D5DCEA; border-radius: 999px; padding: 7px 10px; font: inherit; font-size: 13px;
+              font-weight: 600; color: var(--ink); text-align: right; background: linear-gradient(180deg, #FFFFFF, #F6F8FC);
+              box-shadow: 0 1px 2px rgba(28,33,54,0.06); }
   .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
   .panel-head { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .panel-head h2 { margin: 0 auto 0 0; font-size: 15px; font-weight: 600; color: var(--ink-soft); }
@@ -185,7 +195,8 @@
   .kpi-click:hover, .kpi-click:focus-visible { box-shadow: 0 4px 16px rgba(15,42,77,0.12); border-color: var(--accent); outline: none; }
   .nav-sys { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
   .adm-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); background: #FAFBFD; }
-  .adm-add input, .adm-add select, .adm-tbl select { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; background: var(--card); }
+  .adm-add input { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; background: var(--card); }
+  .adm-add select, .adm-tbl select { border-radius: 8px; }
   .adm-add input[type=email] { min-width: 260px; }
   .adm-add .btn-primary { background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
   #admMsg { font-size: 13px; }
