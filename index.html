@@ -42,11 +42,28 @@
 
   /* signed in: navy sidebar + white top bar + content */
   #app { display: flex; min-height: 100vh; }
-  .sidebar { width: 300px; flex-shrink: 0; background: var(--sidebar); color: #E4E9F2; display: flex; flex-direction: column;
-             position: sticky; top: 0; height: 100vh; border-right: 1px solid #14274A; }
-  .brand { padding: 22px 24px 18px; display: flex; align-items: center; gap: 14px; min-height: 70px; }
+  .sidebar { width: 248px; flex-shrink: 0; background: var(--sidebar); color: #E4E9F2; display: flex; flex-direction: column;
+             position: sticky; top: 0; height: 100vh; border-right: 1px solid #14274A; transition: width .18s ease; z-index: 40; }
+  .sb-toggle { margin-left: auto; flex-shrink: 0; width: 28px; height: 28px; display: grid; place-items: center; border: none;
+               border-radius: 7px; background: rgba(255,255,255,0.08); color: #B7C4DC; cursor: pointer; }
+  .sb-toggle:hover { background: rgba(255,255,255,0.16); color: #fff; }
+  .sb-toggle svg { transition: transform .18s ease; }
+  /* collapsed: a 68px icon rail, so the dashboard gets the width */
+  #app.sb-min .sidebar { width: 68px; }
+  #app.sb-min .brand { padding: 18px 0 14px; flex-direction: column; gap: 10px; }
+  #app.sb-min .brand img { height: 22px; }
+  #app.sb-min .sb-toggle { margin: 0; }
+  #app.sb-min .sb-toggle svg { transform: rotate(180deg); }
+  #app.sb-min .brand-sub, #app.sb-min .greeting, #app.sb-min .nav-label, #app.sb-min .nav-item span,
+  #app.sb-min .data-row, #app.sb-min .account b { display: none; }
+  #app.sb-min .nav { padding: 12px 10px; }
+  #app.sb-min .nav-item { justify-content: center; padding: 11px 0; }
+  #app.sb-min .nav-item.active::before { left: -10px; }
+  #app.sb-min .sidebar-foot { padding: 14px 0 18px; display: flex; justify-content: center; }
+  .sb-backdrop { display: none; }
+  .brand { padding: 22px 18px 18px 22px; display: flex; align-items: center; gap: 10px; min-height: 70px; }
   .brand img { height: 34px; display: block; }
-  .brand-sub { font-size: 11.5px; color: #8CA0C4; line-height: 1.35; }
+  .brand-sub { white-space: nowrap; font-size: 11.5px; color: #8CA0C4; line-height: 1.35; }
   .greeting { padding: 0 22px 14px; font-size: 12.5px; font-weight: 600; color: #9AB0D4; text-transform: uppercase;
               letter-spacing: .3px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 6px; }
   .nav { padding: 18px 12px; flex: 1; overflow-y: auto; }
@@ -229,9 +246,11 @@
 
   @media (max-width: 1100px) { .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 860px) {
-    #app { flex-direction: column; }
-    .sidebar { width: auto; height: auto; position: static; }
-    .nav { padding: 8px 12px; }
+    /* small screens: the rail stays at the side; opened, the sidebar slides over the dashboard instead of pushing it */
+    #app { padding-left: 68px; }
+    .sidebar { position: fixed; left: 0; top: 0; bottom: 0; height: auto; box-shadow: 0 0 24px rgba(0,0,0,.25); }
+    #app.sb-min .sidebar { box-shadow: none; }
+    #app:not(.sb-min) .sb-backdrop { display: block; position: fixed; inset: 0; background: rgba(15,23,42,.35); z-index: 30; }
     .topbar, .content { padding-left: 16px; padding-right: 16px; }
   }
   @media (max-width: 480px) { .kpi-row, .kpi-row.rep, .kpi-row.rep.two { grid-template-columns: 1fr; } }
@@ -258,6 +277,9 @@
     <div class="brand">
       <img src="data:image/png;base64,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" alt="SAR - Connecting Continents">
       <div class="brand-sub">SAR Internal Audit<br>Dashboard</div>
+      <button type="button" class="sb-toggle" id="sbToggle" aria-label="Collapse sidebar" title="Collapse sidebar">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>
+      </button>
     </div>
     <div class="greeting" id="greeting"></div>
     <nav class="nav" id="btReports">
@@ -302,6 +324,7 @@
       </div>
     </div>
   </aside>
+  <div class="sb-backdrop" id="sbBackdrop"></div>
 
   <div class="main">
     <div class="company-tabs" id="companyTabs">
@@ -1226,6 +1249,24 @@ $("admBody").onclick = async (e) => {
   catch (err) { if (!["signed out", "no access"].includes(err.message)) admMsg(err.message, false); }
   await openAdmin();
 };
+
+// Sidebar: collapses to an icon rail so it never squeezes the dashboard. The choice is remembered on wide
+// screens; on small screens it starts as the rail and, opened, slides over the page until a report is picked.
+const smallScreen = window.matchMedia("(max-width: 860px)");
+function setSidebar(min, remember) {
+  $("app").classList.toggle("sb-min", min);
+  const label = min ? "Expand sidebar" : "Collapse sidebar";
+  $("sbToggle").setAttribute("aria-label", label); $("sbToggle").title = label;
+  if (remember && !smallScreen.matches) try { localStorage.setItem("auditSidebarMin", min ? "1" : "0"); } catch {}
+}
+const savedSidebarMin = () => { try { return localStorage.getItem("auditSidebarMin") === "1"; } catch { return false; } };
+setSidebar(smallScreen.matches || savedSidebarMin(), false);
+smallScreen.addEventListener("change", (e) => setSidebar(e.matches || savedSidebarMin(), false));
+$("sbToggle").onclick = () => setSidebar(!$("app").classList.contains("sb-min"), true);
+$("sbBackdrop").onclick = () => setSidebar(true, false);
+document.querySelector(".sidebar").addEventListener("click", (e) => {
+  if (smallScreen.matches && e.target.closest(".nav-item")) setSidebar(true, false);
+});
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
