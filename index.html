@@ -185,18 +185,22 @@
   .kt th[data-sort]:hover { color: var(--ink-soft); }
   .kt th .sort-ar { display: inline-block; width: 10px; margin-left: 3px; color: var(--accent); }
   .cf-sort { display: flex; gap: 6px; padding: 10px 10px 0; }
-  .cf-sort button { flex: 1; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 12.5px; cursor: pointer; color: var(--ink-soft); }
-  .cf-sort button:hover, .cf-sort button.on { border-color: var(--accent); color: var(--accent); }
-  .cf-pop { position: fixed; z-index: 70; width: 260px; background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  /* Filter / sort drop-down buttons: the same blue gradient as Refresh data and Apply */
+  .cf-sort button, .cf-foot button { flex: 1; border: 0; border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+                     color: #fff; background: linear-gradient(135deg, #6488D6, #2C4E82); box-shadow: 0 2px 6px #2C4E8240; }
+  .cf-sort button:hover, .cf-foot button:hover { background: linear-gradient(135deg, #5479C9, #213E6B); }
+  .cf-sort button.on { background: linear-gradient(135deg, #2C4E82, #172B4D); box-shadow: 0 0 0 2px #fff, 0 0 0 4px #6488D6; }
+  .cf-foot button:first-child { background: linear-gradient(135deg, #8EA9E3, #5C7CB8); }
+  .cf-pop { position: fixed; z-index: 70; width: 270px; background: var(--card); border: 1px solid var(--line); border-top: 3px solid #2C4E82; border-radius: 10px;
             box-shadow: 0 12px 32px rgba(15,25,45,0.22); display: flex; flex-direction: column; }
   .cf-pop input[type=text] { margin: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; }
   .cf-list { max-height: 260px; overflow: auto; padding: 0 6px 6px; }
   .cf-list label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-size: 13px; border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink); }
   .cf-list label:hover { background: var(--paper); }
+  .cf-list input { accent-color: #2C4E82; }
   .cf-list label.all { font-weight: 600; border-bottom: 1px solid var(--line); border-radius: 0; margin-bottom: 4px; }
   .cf-list .none { padding: 8px 6px; font-size: 13px; color: var(--ink-faint); }
-  .cf-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
-  .cf-apply { background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff; border: 0; border-radius: 8px; padding: 7px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .cf-foot { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
   .modal { position: fixed; inset: 0; z-index: 50; background: rgba(15,25,45,0.45); display: grid; place-items: center; padding: 24px; }
   .modal-box { background: var(--card); border-radius: 14px; width: min(1400px, 100%); max-height: 85vh; display: flex; flex-direction: column;
                box-shadow: 0 24px 60px rgba(0,0,0,0.3); overflow: hidden; }
@@ -389,7 +393,7 @@
     <div class="cf-sort"><button type="button" id="cfAsc">↑ Sort A → Z</button><button type="button" id="cfDesc">↓ Sort Z → A</button></div>
     <input type="text" id="cfSearch" placeholder="Search…" aria-label="Search values">
     <div class="cf-list" id="cfList"></div>
-    <div class="cf-foot"><button type="button" class="btn-soft" id="cfReset">Reset</button><button type="button" class="cf-apply" id="cfApply">Apply</button></div>
+    <div class="cf-foot"><button type="button" id="cfReset">Reset</button><button type="button" class="cf-apply" id="cfApply">Apply</button></div>
   </div>
 
   <div class="modal hidden" id="kpiModal" role="dialog" aria-modal="true" aria-labelledby="kmTitle">
