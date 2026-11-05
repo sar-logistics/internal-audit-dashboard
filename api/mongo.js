@@ -14,7 +14,7 @@
 // and sends "Authorization: Bearer <Google ID token>" on every call. api/mongo-batch.js uses the
 // same check (authenticate) for the data it returns.
 // Environment: GOOGLE_CLIENT_ID (optional, overrides the default below),
-//              ALLOWED_DOMAINS (default sarlogisolutions.com), ADMIN_EMAILS (comma-separated),
+//              ALLOWED_DOMAINS (default sarlogisolutions.com, sartransport.com), ADMIN_EMAILS (comma-separated),
 //              AUDIT_URI (cluster holding sar-internal-audit; AUDIT_MONGO_DB renames it).
 
 import { MongoClient } from "mongodb";
@@ -28,7 +28,7 @@ export class HttpError extends Error {
 }
 
 const list = (v) => (v || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-const allowedDomains = () => list(process.env.ALLOWED_DOMAINS || "sarlogisolutions.com");
+const allowedDomains = () => list(process.env.ALLOWED_DOMAINS || "sarlogisolutions.com,sartransport.com");
 
 // ============================================================ MongoDB (shared with api/mongo-batch.js)
 const g = globalThis;
