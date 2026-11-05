@@ -482,8 +482,8 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
-  "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
-  "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
+  "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
+  "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
 let company = "SAR Canada";
 const ent = () => ENTITIES[company];
@@ -660,7 +660,7 @@ function renderKpis() {
   $("kOjPctSub").textContent = `${fmtInt(open)} of ${fmtInt(jobs.length)} job${jobs.length === 1 ? "" : "s"}`;
   const finPending = jobs.filter(KPI_VIEWS.fp.flag).length;
   $("kFp").textContent = fmtInt(finPending);
-  $("kFpSub").textContent = "No financial lock date";
+  $("kFpSub").textContent = ent().finNote || "No financial lock date";
   $("kFpPct").textContent = jobs.length ? `${(finPending / jobs.length * 100).toFixed(1)}%` : "–";
   $("kFpPctSub").textContent = `${fmtInt(finPending)} of ${fmtInt(jobs.length)} job${jobs.length === 1 ? "" : "s"}`;
   $("kFpTotal").textContent = fmtInt(jobs.length);

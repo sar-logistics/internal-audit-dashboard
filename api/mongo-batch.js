@@ -29,7 +29,8 @@
 //     WIP lines are in th_ops_wip. Amounts are in IDR.
 // SAR Thailand — the SAR Thailand Sea Ops dashboard has the same rules as Indonesia (database
 //   sar-th-ops; cross trade in th_ops_crosstrade). Amounts are in THB.
-// All: Financial / Operation Lock Pending = the job has no lock date.
+// Financial Lock Pending: Indonesia / Thailand = job status is not CLS; the others = no financial lock date.
+// Operation Lock Pending = the job has no lock date.
 //
 // Environment: CANADA_URI (cluster holding sar-ca-ops), USA_URI (sar-usa-ops), INDONESIA_URI
 // (sar-id-ops), THAILAND_URI (sar-th-ops); the others fall back to CANADA_URI when they are on the
@@ -257,11 +258,12 @@ async function seaOpsData(db, entity) {
     const imp = direction === "Import";
     const period = (imp ? d.destinationEta : d.originEtd) || d.jobOpenedDate || "";
     const threshold = asDate(imp ? d.destinationEta : d.originEtd);   // thresholdDate()
-    const closed = ["CMP", "CLS"].includes(String(d.jobStatus || "").toUpperCase());
+    const status = String(d.jobStatus || "").trim().toUpperCase();
+    const closed = status === "CMP" || status === "CLS";
     const base = [job, direction, String(d.lob || "").toUpperCase(), d.jobBranch || d.branch || "(No Branch)",
                   d.operator || d.jobOwner || "(Unknown)", period];
     jobs.rows.push([...base, !closed && !!threshold && threshold < cut7,
-                    !(filled(d.financialsLockedOn) || filled(d.financialLock)),
+                    status !== "CLS",   // financial lock not done = job status is not CLS
                     !(filled(d.operationsLockedOn) || filled(d.operationLock))]);
     const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0 };
     evaJobs.rows.push([...base, round2(t.wip), round2(-t.accrual),   // accrual is negative: unposted cost = −accrual
