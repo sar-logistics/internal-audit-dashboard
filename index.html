@@ -341,7 +341,7 @@
         <form class="adm-add" id="admAdd" autocomplete="off">
           <input type="email" id="admEmail" placeholder="name@sarlogisolutions.com or @sartransport.com" required aria-label="Email">
           <input type="text" id="admName" placeholder="Full name" aria-label="Name">
-          <select id="admRole" aria-label="Role"><option>Viewer</option><option>Admin</option></select>
+          <select id="admRole" aria-label="Role"><option>Viewer</option><option>Strategy</option><option>Admin</option></select>
           <button class="btn-primary" type="submit">Add user</button>
           <span id="admMsg"></span>
         </form>
@@ -423,7 +423,7 @@ async function start() {
   catch (e) { if (!["signed out", "no access"].includes(e.message)) showLogin("Couldn't sign in: " + e.message); return; }
   finally { $("loginBusy").classList.add("hidden"); }
   $("meName").textContent = me.name;
-  $("greeting").textContent = `Hello ${String(me.name).split(" ")[0]} - ${me.role === "admin" ? "Admin" : "Viewer"}`;
+  $("greeting").textContent = `Hello ${String(me.name).split(" ")[0]} - ${ROLE_NAMES.find((r) => r.toLowerCase() === me.role) || "Viewer"}`;
   $("meAvatar").src = me.picture || "";
   $("meAvatar").classList.toggle("hidden", !me.picture);
   $("meInitial").textContent = String(me.name || "?").trim().charAt(0).toUpperCase();
@@ -955,6 +955,7 @@ $("companyTabs").onclick = (e) => {
 // ============================================================ admin panel
 // Users who may sign in: the users collection of sar-internal-audit, managed through api/mongo.js.
 const adm = { users: [], breakGlass: [] };
+const ROLE_NAMES = ["Viewer", "Strategy", "Admin"];   // Strategy sees the same data as Viewer for now
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
 function showView(view) {
@@ -996,11 +997,11 @@ function renderUsers() {
   $("admCount").textContent = `${n(adm.users.length, "user", "users")} · ${fmtInt(active)} active · ${n(logins, "sign-in", "sign-ins")}`;
   const self = (u) => String(u.email).toLowerCase() === String(me.email).toLowerCase();
   $("admBody").innerHTML = rows.length ? rows.map((u, i) => {
-    const isAdmin = /^admin$/i.test(String(u.role || ""));
+    const role = ROLE_NAMES.find((r) => r.toLowerCase() === String(u.role || "").trim().toLowerCase()) || "Viewer";
     const e = esc(u.email);
     return `<tr data-email="${e}">
       <td>${i + 1}</td><td>${esc(u.name || "")}</td><td>${e}${self(u) ? ' <span class="muted">(you)</span>' : ""}</td>
-      <td><select data-act="role" ${self(u) ? "disabled" : ""}><option${isAdmin ? "" : " selected"}>Viewer</option><option${isAdmin ? " selected" : ""}>Admin</option></select></td>
+      <td><select data-act="role" ${self(u) ? "disabled" : ""}>${ROLE_NAMES.map((r) => `<option${r === role ? " selected" : ""}>${r}</option>`).join("")}</select></td>
       <td><input type="checkbox" data-act="active" ${u.active !== false ? "checked" : ""} ${self(u) ? "disabled" : ""} aria-label="Active"></td>
       <td class="num">${fmtInt(u.loginCount || 0)}</td>
       <td class="muted">${fmtSignIn(u.lastLoginAt)}</td>

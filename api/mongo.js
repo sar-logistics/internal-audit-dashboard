@@ -7,7 +7,7 @@
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
-// per person { email, name, role: "Admin" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
+// per person { email, name, role: "Admin" | "Strategy" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
 // ADMIN_EMAILS always get in as Admin, so the list can't lock everyone out. Without AUDIT_URI the
 // old rule applies: anyone on an allowed domain is a Viewer.
 // The browser signs in with Google (OAuth client in Google Cloud project sar-group-internal-audit)
@@ -89,14 +89,18 @@ async function listedUser(email) {
   return doc;
 }
 
-/** "admin" | "viewer" | null (no access). */
+// Roles as stored in the list. Strategy and Viewer see the same data for now; only Admins manage users.
+const ROLES = ["Admin", "Strategy", "Viewer"];
+const roleName = (v) => ROLES.find((r) => r.toLowerCase() === String(v || "").trim().toLowerCase()) || "Viewer";
+
+/** "admin" | "strategy" | "viewer" | null (no access). */
 export async function roleFor(email) {
   const e = email.toLowerCase();
   if (isAdminEmail(e)) return "admin";
   if (!process.env.AUDIT_URI) return allowedDomains().includes(e.split("@")[1]) ? "viewer" : null;
   const u = await listedUser(e);
   if (!u || u.active === false) return null;
-  return /^admin$/i.test(String(u.role || "").trim()) ? "admin" : "viewer";
+  return roleName(u.role).toLowerCase();
 }
 
 const tokenCache = new Map(); // idToken -> { user, exp }
@@ -153,7 +157,7 @@ async function manageUsers(me, body) {
     await col.deleteMany(emailQuery(email));
     return { ok: true };
   }
-  const role = /^admin$/i.test(String(body.role || "")) ? "Admin" : "Viewer";
+  const role = roleName(body.role);
   const active = body.active !== false;
   if (email === me.email && (role !== "Admin" || !active)) throw new HttpError(400, "You can't remove your own Admin access.");
   const now = new Date();
