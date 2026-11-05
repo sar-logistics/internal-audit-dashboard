@@ -283,7 +283,7 @@
     </div>
     <div class="greeting" id="greeting"></div>
     <nav class="nav" id="btReports">
-      <div class="nav-label" id="navCompany">SAR Canada</div>
+      <div class="nav-label">Reports</div>
       <div class="nav-item active" data-report="total" title="Total Jobs Created">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><path d="M5.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M1.5 8.5h13"/></svg>
         <span>Total Jobs Created</span>
@@ -1145,7 +1145,6 @@ $("companyTabs").onclick = (e) => {
   $("coEmptyText").textContent = `${co} isn't connected to the audit dashboard yet.`;
   if (!connected || co === company) return;
   company = co;
-  $("navCompany").textContent = co;
   $("btLob").value = "";
   bt.open.clear();
   closeKpi();
