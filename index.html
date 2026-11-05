@@ -147,6 +147,11 @@
   .fx input:focus-visible { outline: none; border-color: #2C4E82; box-shadow: 0 0 0 3px #6488D640; }
   .adm-tbl select:disabled { cursor: default; opacity: .55; }
   .select option, .adm-add select option, .adm-tbl select option { font-weight: 600; color: var(--ink); background: #fff; }
+  .date-in { font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); border: 1px solid #D5DCEA; border-radius: 999px;
+             padding: 6px 12px; background: linear-gradient(180deg, #FFFFFF, #F6F8FC); box-shadow: 0 1px 2px rgba(28,33,54,0.06); cursor: pointer; }
+  .date-in:hover { border-color: #6488D6; }
+  .date-in:focus-visible { outline: none; border-color: #2C4E82; box-shadow: 0 0 0 3px #6488D640; }
+  .date-in::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .7; }
   .fx { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-soft); }
   .fx input { width: 70px; border: 1px solid #D5DCEA; border-radius: 999px; padding: 7px 10px; font: inherit; font-size: 13px;
               font-weight: 600; color: var(--ink); text-align: right; background: linear-gradient(180deg, #FFFFFF, #F6F8FC);
@@ -358,8 +363,11 @@
     <div class="topbar">
       <h1 id="pageTitle" class="hidden">Admin Panel</h1>
       <div class="filters" id="btFilters">
-        <label for="btFrom">From</label><select class="select" id="btFrom"></select>
-        <label for="btTo">To</label><select class="select" id="btTo"></select>
+        <label for="btView">View</label><select class="select" id="btView">
+          <option value="week">Weekly</option><option value="fortnight">Fortnightly</option><option value="month" selected>Monthly</option>
+          <option value="year">Yearly</option><option value="custom">Custom</option></select>
+        <label for="btFrom" id="btFromLbl">From</label><select class="select" id="btFrom"></select><input type="date" class="date-in hidden" id="btFromDay" aria-label="From date">
+        <label for="btTo" id="btToLbl">To</label><select class="select" id="btTo"></select><input type="date" class="date-in hidden" id="btToDay" aria-label="To date">
         <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
         <span class="fx" id="btCurWrap"><select class="select" id="btCur" aria-label="Currency"><option>USD</option><option id="btCurLocal">CAD</option></select></span>
         <span class="fx" id="btFx">1 USD = <input id="btRate" type="number" min="0.01" step="0.01" value="1.40" aria-label="Exchange rate"> <span id="btRateCur">CAD</span></span>
@@ -593,7 +601,8 @@ function setLoading(on, text) {
 $("caRefresh").onclick = () => loadCompany(true);
 
 // ============================================================ Branch › Job Owner table
-// Same reports as the Canada ops dashboard. Columns are months of each job's period date.
+// Same reports as the Canada ops dashboard. Columns are periods (weeks, fortnights, months or years, picked
+// with View) of each job's period date.
 //   Total Jobs Created: every job in the ca_ops_* collections
 //   Open Jobs:          jobs not yet operation-locked (isOpen, else no Operation Lock Date)
 //   Revenue Not Billed: estimatedvsactual jobs whose summed unbilled revenue is > 0
@@ -627,6 +636,39 @@ function parseDay(v) {
 const monthKey = (d) => d.getFullYear() * 12 + d.getMonth();
 const monthLabel = (k) => `${MONTHS[k % 12]} '${String(Math.floor(k / 12)).slice(2)}`;
 
+// Period keys. A day is a whole-day number (days since 1 Jan 1970); weeks run Monday–Sunday (1970-01-05 was
+// a Monday = day 4); a fortnight is a half month (1st–15th, 16th–month end).
+const DAY_MS = 864e5;
+const dayNum = (d) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS);
+const dayDate = (n) => { const u = new Date(n * DAY_MS); return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate()); };
+const yy = (y) => `'${String(y).slice(2)}`;
+const fmtDayNum = (n) => { const d = dayDate(n); return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
+function periodKeys(d) {
+  const day = dayNum(d), mk = monthKey(d);
+  return { day, wk: Math.floor((day - 4) / 7), fk: mk * 2 + (d.getDate() > 15 ? 1 : 0), mk, yk: d.getFullYear() };
+}
+const monthEnd = (mk) => new Date(Math.floor(mk / 12), mk % 12 + 1, 0).getDate();
+const spanLabel = (a, b) => {   // "3–9 Nov '26", "29 Sep–5 Oct '26", "29 Dec '25–4 Jan '26"
+  const x = dayDate(a), y = dayDate(b);
+  if (x.getFullYear() !== y.getFullYear()) return `${x.getDate()} ${MONTHS[x.getMonth()]} ${yy(x.getFullYear())}–${y.getDate()} ${MONTHS[y.getMonth()]} ${yy(y.getFullYear())}`;
+  return x.getMonth() === y.getMonth() ? `${x.getDate()}–${y.getDate()} ${MONTHS[y.getMonth()]} ${yy(y.getFullYear())}`
+                                       : `${x.getDate()} ${MONTHS[x.getMonth()]}–${y.getDate()} ${MONTHS[y.getMonth()]} ${yy(y.getFullYear())}`;
+};
+// prop: the row's key for this view; first / last: its first and last day; defFrom: the default From for To = now
+const PERIODS = {
+  week:      { prop: "wk", first: (k) => k * 7 + 4, last: (k) => k * 7 + 10, label: (k) => spanLabel(k * 7 + 4, k * 7 + 10),
+               defFrom: (now) => now - 11 },
+  fortnight: { prop: "fk", label: (k) => { const m = k >> 1; return k % 2 ? `16–${monthEnd(m)} ${monthLabel(m)}` : `1–15 ${monthLabel(m)}`; },
+               first: (k) => { const m = k >> 1; return dayNum(new Date(Math.floor(m / 12), m % 12, k % 2 ? 16 : 1)); },
+               last: (k) => { const m = k >> 1; return dayNum(new Date(Math.floor(m / 12), m % 12, k % 2 ? monthEnd(m) : 15)); },
+               defFrom: (now) => now - 11 },
+  month:     { prop: "mk", label: monthLabel, full: (k) => `${MONTHS[k % 12]} ${Math.floor(k / 12)}`,
+               defFrom: (now) => now - (now % 12) },
+  year:      { prop: "yk", label: String, full: String, defFrom: (now, lo) => lo },
+  custom:    { custom: true },
+};
+const curPeriod = () => $("btView").value;
+
 function lobLabel(lob, direction) {
   const c = String(lob || "").trim().toUpperCase();
   if (direction === "General" || /^GEN/.test(c)) return "General";
@@ -640,7 +682,7 @@ function unpack(set) {
   return (set?.rows || []).map((a) => {
     const r = {}; f.forEach((k, i) => { r[k] = a[i]; });
     const d = parseDay(r.periodDate);
-    r.mk = d ? monthKey(d) : null;
+    Object.assign(r, d ? periodKeys(d) : { day: null, wk: null, fk: null, mk: null, yk: null });
     r.lobLabel = lobLabel(r.lob, r.direction);
     return r;
   });
@@ -650,20 +692,43 @@ function setBranchData(jobs, evaJobs) {
   bt.jobs = unpack(jobs);
   bt.eva = unpack(evaJobs);
   const all = [...bt.jobs, ...bt.eva];
-  // Month pickers: every month that has jobs; default Jan of this year → this month
-  const keys = all.map((r) => r.mk).filter((k) => k !== null);
-  const now = monthKey(new Date());
-  const lo = Math.min(now - (now % 12), ...keys), hi = Math.max(now, ...keys);
-  const keep = (id, def) => { const v = +$(id).value; return $(id).options.length && !isNaN(v) ? v : def; };
-  const from = keep("btFrom", now - (now % 12)), to = keep("btTo", now);
-  const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${monthLabel(k)}</option>`);
-  $("btFrom").innerHTML = $("btTo").innerHTML = opts.join("");
-  $("btFrom").value = from; $("btTo").value = to;
+  fillPeriodPickers(true);
   const lobs = [...new Set(all.map((r) => r.lobLabel))].sort();
   const lob = $("btLob").value;
   $("btLob").innerHTML = `<option value="">All LOBs</option>` + lobs.map((l) => `<option>${l}</option>`).join("");
   $("btLob").value = lobs.includes(lob) ? lob : "";
   renderBranchTable();
+}
+
+// From / To for the picked view: every period from the earliest job to now (or the latest job). Defaults:
+// weekly / fortnightly = the last 12, monthly = Jan of this year → this month, yearly = every year,
+// custom = 1 Jan of this year → today. keep = keep the picked periods (same view, new data).
+function fillPeriodPickers(keep) {
+  const view = curPeriod(), v = PERIODS[view];
+  keep = keep && bt.pickerView === view;
+  bt.pickerView = view;
+  ["btFrom", "btTo"].forEach((id) => $(id).classList.toggle("hidden", !!v.custom));
+  ["btFromDay", "btToDay"].forEach((id) => $(id).classList.toggle("hidden", !v.custom));
+  ["btFromLbl", "btToLbl"].forEach((id, i) => $(id).htmlFor = v.custom ? ["btFromDay", "btToDay"][i] : ["btFrom", "btTo"][i]);
+  if (v.custom) {
+    const today = new Date();
+    if (!keep || !$("btFromDay").value) $("btFromDay").value = `${today.getFullYear()}-01-01`;
+    if (!keep || !$("btToDay").value) {
+      const p = (n) => String(n).padStart(2, "0");
+      $("btToDay").value = `${today.getFullYear()}-${p(today.getMonth() + 1)}-${p(today.getDate())}`;
+    }
+    return;
+  }
+  const now = periodKeys(new Date())[v.prop];
+  let lo = now, hi = now;
+  for (const r of [...bt.jobs, ...bt.eva]) { const k = r[v.prop]; if (k !== null) { if (k < lo) lo = k; if (k > hi) hi = k; } }
+  const defFrom = v.defFrom(now, lo);
+  lo = Math.min(lo, defFrom);
+  const kept = (id, def) => { const x = +$(id).value; return keep && $(id).options.length && !isNaN(x) ? x : def; };
+  const from = kept("btFrom", defFrom), to = kept("btTo", now);
+  const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${v.label(k)}</option>`);
+  $("btFrom").innerHTML = $("btTo").innerHTML = opts.join("");
+  $("btFrom").value = from; $("btTo").value = to;
 }
 
 function setExpandButton(shown) {
@@ -674,18 +739,32 @@ function setExpandButton(shown) {
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-// The From / To months and LOB in the top bar apply to the KPI cards, their pop-ups and the table.
+// The View, From / To and LOB in the top bar apply to the KPI cards, their pop-ups and the table.
+// prop / lo / hi pick the rows; cols (keys of colProp, labelled by label) are the table's columns.
+// Custom picks whole days and shows months as columns.
 function filterState() {
-  const from = +$("btFrom").value, to = +$("btTo").value;
-  return { lo: Math.min(from, to), hi: Math.max(from, to), lob: $("btLob").value };
+  const v = PERIODS[curPeriod()], lob = $("btLob").value;
+  if (v.custom) {
+    const day = (id) => { const d = parseDay($(id).value); return d ? dayNum(d) : dayNum(new Date()); };
+    const a = day("btFromDay"), b = day("btToDay"), lo = Math.min(a, b), hi = Math.max(a, b);
+    const m0 = periodKeys(dayDate(lo)).mk, m1 = periodKeys(dayDate(hi)).mk;
+    const cols = []; for (let k = m0; k <= m1; k++) cols.push(k);
+    return { prop: "day", lo, hi, lob, cols, colProp: "mk", label: monthLabel,
+             range: `${fmtDayNum(lo)} → ${fmtDayNum(hi)}`, short: lo === hi ? fmtDayNum(lo) : `${fmtDayNum(lo)} – ${fmtDayNum(hi)}` };
+  }
+  const from = +$("btFrom").value, to = +$("btTo").value, lo = Math.min(from, to), hi = Math.max(from, to);
+  const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
+  const range = v.full ? (lo === hi ? v.full(lo) : `${v.full(lo)} → ${v.full(hi)}`) : `${fmtDayNum(v.first(lo))} → ${fmtDayNum(v.last(hi))}`;
+  return { prop: v.prop, lo, hi, lob, cols, colProp: v.prop, label: v.label, range,
+           short: `${v.label(lo)}${hi !== lo ? " – " + v.label(hi) : ""}` };
 }
 function inFilters(pool) {
-  const { lo, hi, lob } = filterState();
-  return bt[pool].filter((r) => r.mk !== null && r.mk >= lo && r.mk <= hi && (!lob || r.lobLabel === lob));
+  const { prop, lo, hi, lob } = filterState();
+  return bt[pool].filter((r) => r[prop] !== null && r[prop] >= lo && r[prop] <= hi && (!lob || r.lobLabel === lob));
 }
 function filterLabel() {
-  const { lo, hi, lob } = filterState();
-  return `${monthLabel(lo)}${hi !== lo ? " – " + monthLabel(hi) : ""} · ${lob || "All LOBs"}`;
+  const { short, lob } = filterState();
+  return `${short} · ${lob || "All LOBs"}`;
 }
 
 function renderKpis() {
@@ -693,9 +772,7 @@ function renderKpis() {
   const sum = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
   const ur = eva.filter(KPI_VIEWS.ur.flag), uc = eva.filter(KPI_VIEWS.uc.flag);
   const open = jobs.filter(KPI_VIEWS.oj.flag).length;
-  const { lo, hi } = filterState();
-  const fullMonth = (k) => `${MONTHS[k % 12]} ${Math.floor(k / 12)}`;
-  const period = `${fullMonth(lo)} → ${fullMonth(hi)}`;
+  const period = filterState().range;
   document.querySelectorAll(".kpi-row.rep").forEach((row) => row.classList.toggle("hidden", row.dataset.for !== bt.report));
   $("kTj").textContent = fmtInt(jobs.length);
   $("kTjSub").textContent = period;
@@ -723,7 +800,7 @@ function renderKpis() {
 function renderBranchTable() {
   renderKpis();
   const rep = REPORTS[bt.report];
-  const { lo, hi, lob } = filterState();
+  const { cols, colProp, label } = filterState();
   const byAmount = bt.byAmount && !!rep.amtKey;
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
@@ -735,11 +812,10 @@ function renderBranchTable() {
   $("btCount").textContent = rep.count ? rep.count(inRange.length, flagged.length)
                                        : `${fmtInt(inRange.length)} total · ${fmtInt(flagged.length)} flagged`;
 
-  const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
   const wt = (r) => byAmount ? (Number(r[rep.amtKey]) || 0) : 1;
   const fmt = (n) => byAmount ? fmtMoney(n) : fmtInt(n);
   const blank = () => ({ total: 0, by: {} });
-  const add = (t, r) => { const w = wt(r); t.total += w; t.by[r.mk] = (t.by[r.mk] || 0) + w; };
+  const add = (t, r) => { const w = wt(r); t.total += w; t.by[r[colProp]] = (t.by[r[colProp]] || 0) + w; };
 
   const grand = blank(), branches = new Map();
   for (const r of flagged) {
@@ -754,7 +830,7 @@ function renderBranchTable() {
   const cells = (t, b = "", o = "") => `<td class="gt drill" ${at(b, o, "")}>${fmt(t.total)}</td>` +
     cols.map((k) => t.by[k] ? `<td class="drill" ${at(b, o, k)}>${fmt(t.by[k])}</td>` : `<td class="zero">—</td>`).join("");
 
-  $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${monthLabel(k)}</th>`).join("")}</tr>`;
+  $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${label(k)}</th>`).join("")}</tr>`;
   if (!flagged.length) {
     setExpandButton([]);
     $("btBody").innerHTML = `<tr><td class="empty" colspan="${cols.length + 2}">No jobs in this period.</td></tr>`;
@@ -792,7 +868,8 @@ $("btExpand").onclick = () => {
 };
 $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { showView("data"); bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
-["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+["btFrom", "btTo", "btFromDay", "btToDay", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+$("btView").onchange = () => { fillPeriodPickers(false); renderBranchTable(); };
 const showRate = () => { const r = rateOf(ent().source); $("btRate").value = r >= 100 ? String(Math.round(r)) : r.toFixed(2); };
 function redrawMoney() {
   const local = isLocalCurrency(), cur = ent().source;
@@ -944,10 +1021,10 @@ function openKpi(key) {
 // (b = branch, o = job owner, m = month key; empty means all of them).
 function openCell(b, o, m) {
   const rep = REPORTS[bt.report];
-  const rows = bt.flagged.filter((r) => (!b || r.branch === b) && (!o || r.jobOwner === o) && (!m || r.mk === +m));
+  const { colProp, label, short, lob } = filterState();
+  const rows = bt.flagged.filter((r) => (!b || r.branch === b) && (!o || r.jobOwner === o) && (!m || r[colProp] === +m));
   const where = [b || "All branches", o].filter(Boolean).join(" › ");
-  const { lob } = filterState();
-  openDrill(rep.title, drills()[bt.report], rows, `${where} · ${m ? monthLabel(+m) : filterLabel().split(" · ")[0]} · ${lob || "All LOBs"}`);
+  openDrill(rep.title, drills()[bt.report], rows, `${where} · ${m ? label(+m) : short} · ${lob || "All LOBs"}`);
 }
 
 async function openDrill(title, drill, summaryRows, subtitle) {
