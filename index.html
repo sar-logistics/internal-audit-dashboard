@@ -177,6 +177,7 @@
            color: var(--ink-faint); border-bottom: 1px solid var(--line); white-space: nowrap; background: #FAFBFD; }
   .bt th:first-child, .bt td:first-child { text-align: left; position: sticky; left: 0; background: inherit; min-width: 240px; }
   .bt td { text-align: right; padding: 11px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .bt th .th-sub { font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-faint); margin-top: 2px; }
   .bt td.gt, .bt th.gt { border-right: 1px solid var(--line); font-weight: 700; }
   .bt td.zero { color: #C5CBDA; }
   .bt td.drill { cursor: pointer; }
@@ -366,6 +367,7 @@
         <label for="btView">View</label><select class="select" id="btView">
           <option value="week">Weekly</option><option value="fortnight">Fortnightly</option><option value="month" selected>Monthly</option>
           <option value="year">Yearly</option><option value="custom">Custom</option></select>
+        <label for="btMonth" id="btMonthLbl" class="hidden">Month</label><select class="select hidden" id="btMonth" aria-label="Month"></select>
         <label for="btFrom" id="btFromLbl">From</label><select class="select" id="btFrom"></select><input type="date" class="date-in hidden" id="btFromDay" aria-label="From date">
         <label for="btTo" id="btToLbl">To</label><select class="select" id="btTo"></select><input type="date" class="date-in hidden" id="btToDay" aria-label="To date">
         <select class="select" id="btLob" aria-label="Line of business"><option value="">All LOBs</option></select>
@@ -654,10 +656,25 @@ const spanLabel = (a, b) => {   // "3–9 Nov '26", "29 Sep–5 Oct '26", "29 De
   return x.getMonth() === y.getMonth() ? `${x.getDate()}–${y.getDate()} ${MONTHS[y.getMonth()]} ${yy(y.getFullYear())}`
                                        : `${x.getDate()} ${MONTHS[x.getMonth()]}–${y.getDate()} ${MONTHS[y.getMonth()]} ${yy(y.getFullYear())}`;
 };
-// prop: the row's key for this view; first / last: its first and last day; defFrom: the default From for To = now
+// ISO weeks: week k runs Monday (day k*7+4) to Sunday; its Thursday (k*7+7) fixes the ISO year, the week
+// number and the month the week belongs to (so every week sits in exactly one month).
+const isoThu = (k) => dayDate(k * 7 + 7);
+function isoWeek(k) {
+  const t = isoThu(k), y = t.getFullYear();
+  return { y, w: Math.floor((dayNum(t) - dayNum(new Date(y, 0, 1))) / 7) + 1, mk: monthKey(t) };
+}
+const isoLabel = (k) => { const { y, w } = isoWeek(k); return `${y}-W${String(w).padStart(2, "0")}`; };
+function weeksOfMonth(mk) {   // the weeks whose Thursday falls in month mk
+  const first = new Date(Math.floor(mk / 12), mk % 12, 1);
+  const thu = dayNum(first) + ((4 - first.getDay() + 7) % 7);
+  const out = []; for (let d = thu; dayDate(d).getMonth() === mk % 12; d += 7) out.push((d - 7) / 7);
+  return out;
+}
+// prop: the row's key for this view; first / last: its first and last day; defFrom: the default From for To = now.
+// byMonth: one Month picker instead of From / To; the columns are that month's ISO weeks.
 const PERIODS = {
-  week:      { prop: "wk", first: (k) => k * 7 + 4, last: (k) => k * 7 + 10, label: (k) => spanLabel(k * 7 + 4, k * 7 + 10),
-               defFrom: (now) => now - 11 },
+  week:      { prop: "wk", byMonth: true, first: (k) => k * 7 + 4, last: (k) => k * 7 + 10, label: isoLabel,
+               sub: (k) => spanLabel(k * 7 + 4, k * 7 + 10).replace(/ '\d\d$/, "") },
   fortnight: { prop: "fk", label: (k) => { const m = k >> 1; return k % 2 ? `16–${monthEnd(m)} ${monthLabel(m)}` : `1–15 ${monthLabel(m)}`; },
                first: (k) => { const m = k >> 1; return dayNum(new Date(Math.floor(m / 12), m % 12, k % 2 ? 16 : 1)); },
                last: (k) => { const m = k >> 1; return dayNum(new Date(Math.floor(m / 12), m % 12, k % 2 ? monthEnd(m) : 15)); },
@@ -707,7 +724,9 @@ function fillPeriodPickers(keep) {
   const view = curPeriod(), v = PERIODS[view];
   keep = keep && bt.pickerView === view;
   bt.pickerView = view;
-  ["btFrom", "btTo"].forEach((id) => $(id).classList.toggle("hidden", !!v.custom));
+  ["btFrom", "btTo"].forEach((id) => $(id).classList.toggle("hidden", !!v.custom || !!v.byMonth));
+  ["btFromLbl", "btToLbl"].forEach((id) => $(id).classList.toggle("hidden", !!v.byMonth));
+  ["btMonth", "btMonthLbl"].forEach((id) => $(id).classList.toggle("hidden", !v.byMonth));
   ["btFromDay", "btToDay"].forEach((id) => $(id).classList.toggle("hidden", !v.custom));
   ["btFromLbl", "btToLbl"].forEach((id, i) => $(id).htmlFor = v.custom ? ["btFromDay", "btToDay"][i] : ["btFrom", "btTo"][i]);
   if (v.custom) {
@@ -717,6 +736,16 @@ function fillPeriodPickers(keep) {
       const p = (n) => String(n).padStart(2, "0");
       $("btToDay").value = `${today.getFullYear()}-${p(today.getMonth() + 1)}-${p(today.getDate())}`;
     }
+    return;
+  }
+  if (v.byMonth) {   // every month from the earliest job to now (or the latest job); default this month
+    const now = monthKey(new Date());
+    let lo = now, hi = now;
+    for (const r of [...bt.jobs, ...bt.eva]) if (r.mk !== null) { if (r.mk < lo) lo = r.mk; if (r.mk > hi) hi = r.mk; }
+    const cur = +$("btMonth").value, pick = keep && $("btMonth").options.length && !isNaN(cur) ? cur : now;
+    const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${PERIODS.month.full(k)}</option>`);
+    $("btMonth").innerHTML = opts.join("");
+    $("btMonth").value = pick;
     return;
   }
   const now = periodKeys(new Date())[v.prop];
@@ -751,6 +780,12 @@ function filterState() {
     const cols = []; for (let k = m0; k <= m1; k++) cols.push(k);
     return { prop: "day", lo, hi, lob, cols, colProp: "mk", label: monthLabel,
              range: `${fmtDayNum(lo)} → ${fmtDayNum(hi)}`, short: lo === hi ? fmtDayNum(lo) : `${fmtDayNum(lo)} – ${fmtDayNum(hi)}` };
+  }
+  if (v.byMonth) {
+    const mk = +$("btMonth").value, cols = weeksOfMonth(mk), lo = cols[0], hi = cols[cols.length - 1];
+    return { prop: v.prop, lo, hi, lob, cols, colProp: v.prop, label: v.label, sub: v.sub,
+             range: `${fmtDayNum(v.first(lo))} → ${fmtDayNum(v.last(hi))}`,
+             short: `${PERIODS.month.full(mk)} (${v.label(lo).slice(5)}–${v.label(hi).slice(5)})` };
   }
   const from = +$("btFrom").value, to = +$("btTo").value, lo = Math.min(from, to), hi = Math.max(from, to);
   const cols = []; for (let k = lo; k <= hi; k++) cols.push(k);
@@ -800,7 +835,7 @@ function renderKpis() {
 function renderBranchTable() {
   renderKpis();
   const rep = REPORTS[bt.report];
-  const { cols, colProp, label } = filterState();
+  const { cols, colProp, label, sub } = filterState();
   const byAmount = bt.byAmount && !!rep.amtKey;
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
@@ -830,7 +865,7 @@ function renderBranchTable() {
   const cells = (t, b = "", o = "") => `<td class="gt drill" ${at(b, o, "")}>${fmt(t.total)}</td>` +
     cols.map((k) => t.by[k] ? `<td class="drill" ${at(b, o, k)}>${fmt(t.by[k])}</td>` : `<td class="zero">—</td>`).join("");
 
-  $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${label(k)}</th>`).join("")}</tr>`;
+  $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th>${cols.map((k) => `<th>${label(k)}${sub ? `<div class="th-sub">${sub(k)}</div>` : ""}</th>`).join("")}</tr>`;
   if (!flagged.length) {
     setExpandButton([]);
     $("btBody").innerHTML = `<tr><td class="empty" colspan="${cols.length + 2}">No jobs in this period.</td></tr>`;
@@ -868,7 +903,7 @@ $("btExpand").onclick = () => {
 };
 $("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { showView("data"); bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
-["btFrom", "btTo", "btFromDay", "btToDay", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+["btMonth", "btFrom", "btTo", "btFromDay", "btToDay", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 $("btView").onchange = () => { fillPeriodPickers(false); renderBranchTable(); };
 const showRate = () => { const r = rateOf(ent().source); $("btRate").value = r >= 100 ? String(Math.round(r)) : r.toFixed(2); };
 function redrawMoney() {
@@ -1021,10 +1056,10 @@ function openKpi(key) {
 // (b = branch, o = job owner, m = month key; empty means all of them).
 function openCell(b, o, m) {
   const rep = REPORTS[bt.report];
-  const { colProp, label, short, lob } = filterState();
+  const { colProp, label, sub, short, lob } = filterState();
   const rows = bt.flagged.filter((r) => (!b || r.branch === b) && (!o || r.jobOwner === o) && (!m || r[colProp] === +m));
   const where = [b || "All branches", o].filter(Boolean).join(" › ");
-  openDrill(rep.title, drills()[bt.report], rows, `${where} · ${m ? label(+m) : short} · ${lob || "All LOBs"}`);
+  openDrill(rep.title, drills()[bt.report], rows, `${where} · ${m ? label(+m) + (sub ? ` (${sub(+m)})` : "") : short} · ${lob || "All LOBs"}`);
 }
 
 async function openDrill(title, drill, summaryRows, subtitle) {
