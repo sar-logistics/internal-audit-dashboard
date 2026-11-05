@@ -159,6 +159,18 @@
   /* KPI pop-up */
   .kpi-click { cursor: pointer; transition: box-shadow .15s ease, border-color .15s ease; }
   .kpi-click:hover, .kpi-click:focus-visible { box-shadow: 0 4px 16px rgba(15,42,77,0.12); border-color: var(--accent); outline: none; }
+  .nav-sys { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .adm-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); background: #FAFBFD; }
+  .adm-add input, .adm-add select, .adm-tbl select { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; background: var(--card); }
+  .adm-add input[type=email] { min-width: 260px; }
+  .adm-add .btn-primary { background: linear-gradient(135deg, #6488D6, #2C4E82); color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #admMsg { font-size: 13px; }
+  #admMsg.err { color: var(--coral); }
+  #admMsg.ok { color: var(--good); }
+  .adm-tbl td { vertical-align: middle; }
+  .adm-tbl .muted { color: var(--ink-faint); font-size: 12.5px; }
+  .adm-tbl button.link { background: none; border: 0; color: var(--coral); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
+  .role-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: #EEF2FF; color: #4338CA; }
   .modal { position: fixed; inset: 0; z-index: 50; background: rgba(15,25,45,0.45); display: grid; place-items: center; padding: 24px; }
   .modal-box { background: var(--card); border-radius: 14px; width: min(1400px, 100%); max-height: 85vh; display: flex; flex-direction: column;
                box-shadow: 0 24px 60px rgba(0,0,0,0.3); overflow: hidden; }
@@ -234,6 +246,13 @@
         <span>Cost Not Posted</span>
       </div>
     </nav>
+    <nav class="nav nav-sys hidden" id="sysNav">
+      <div class="nav-label">System</div>
+      <div class="nav-item" id="navAdmin" title="Admin Panel">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.5 2.5 3.5v4c0 3.2 2.3 5.9 5.5 7 3.2-1.1 5.5-3.8 5.5-7v-4z"/><rect x="5.5" y="7" width="5" height="4" rx="1"/><path d="M6.5 7V5.8a1.5 1.5 0 0 1 3 0V7"/></svg>
+        <span>Admin Panel</span>
+      </div>
+    </nav>
     <div class="sidebar-foot">
       <div class="data-row">
         <span class="data-pill"><span class="dot"></span>Live Data</span>
@@ -303,6 +322,27 @@
         <div class="tbl-wrap"><table class="bt"><thead id="btHead"></thead><tbody id="btBody"></tbody></table></div>
       </div>
     </div>
+    <div class="content hidden" id="adminContent">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Users</h2>
+          <span class="count" id="admCount"></span>
+          <input class="km-search" id="admSearch" placeholder="Search name, email or role…" aria-label="Search users">
+        </div>
+        <form class="adm-add" id="admAdd" autocomplete="off">
+          <input type="email" id="admEmail" placeholder="name@sarlogisolutions.com" required aria-label="Email">
+          <input type="text" id="admName" placeholder="Full name" aria-label="Name">
+          <select id="admRole" aria-label="Role"><option>Viewer</option><option>Admin</option></select>
+          <button class="btn-primary" type="submit">Add user</button>
+          <span id="admMsg"></span>
+        </form>
+        <div class="tbl-wrap"><table class="kt adm-tbl">
+          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Last sign-in</th><th>Added by</th><th></th></tr></thead>
+          <tbody id="admBody"></tbody>
+        </table></div>
+      </div>
+    </div>
+
   </div>
 
   <div class="modal hidden" id="kpiModal" role="dialog" aria-modal="true" aria-labelledby="kmTitle">
@@ -362,7 +402,7 @@ async function api(path, body) {
   const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body || {}) });
   const data = await r.json().catch(() => ({}));
   if (r.status === 401) { showLogin(data.error || "Please sign in again."); throw new Error("signed out"); }
-  if (r.status === 403) { showLogin(data.error || "This Google account doesn't have access."); throw new Error("no access"); }
+  if (r.status === 403 && data.code === "no_access") { showLogin(data.error || "This Google account doesn't have access."); throw new Error("no access"); }
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 }
@@ -376,6 +416,8 @@ async function start() {
   $("meAvatar").classList.toggle("hidden", !me.picture);
   $("meInitial").textContent = String(me.name || "?").trim().charAt(0).toUpperCase();
   $("meInitial").classList.toggle("hidden", !!me.picture);
+  $("sysNav").classList.toggle("hidden", me.role !== "admin");
+  showView("data");
   $("login").classList.add("hidden");
   $("app").classList.remove("hidden");
   loadCompany();
@@ -635,7 +677,7 @@ $("btExpand").onclick = () => {
   if (bt.allOpen) bt.open.clear(); else bt.shown.forEach((b) => bt.open.add(b));
   renderBranchTable();
 };
-$("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { bt.report = b.dataset.report; renderBranchTable(); } };
+$("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { showView("data"); bt.report = b.dataset.report; renderBranchTable(); } };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btFrom", "btTo", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 const showRate = () => { const r = rateOf(ent().source); $("btRate").value = r >= 100 ? String(Math.round(r)) : r.toFixed(2); };
@@ -873,6 +915,7 @@ $("companyTabs").onclick = (e) => {
   const b = e.target.closest("button[data-co]");
   if (!b) return;
   const co = b.dataset.co, connected = !!ENTITIES[co];
+  showView("data");
   document.querySelectorAll("#companyTabs button").forEach((x) => x.classList.toggle("on", x === b));
   $("pageTitle").textContent = co;
   $("canadaContent").classList.toggle("hidden", !connected);
@@ -889,6 +932,99 @@ $("companyTabs").onclick = (e) => {
   closeKpi();
   redrawMoney();
   loadCompany();
+};
+
+// ============================================================ admin panel
+// Users who may sign in: the users collection of sar-internal-audit, managed through api/mongo.js.
+const adm = { users: [], breakGlass: [] };
+
+// "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
+function showView(view) {
+  const admin = view === "admin";
+  $("adminContent").classList.toggle("hidden", !admin);
+  $("navAdmin").classList.toggle("active", admin);
+  $("companyTabs").classList.toggle("hidden", admin);
+  document.querySelectorAll("#btReports [data-report]").forEach((x) => x.classList.toggle("active", !admin && x.dataset.report === bt.report));
+  const co = admin ? null : document.querySelector("#companyTabs button.on")?.dataset.co || company;
+  const connected = !admin && !!ENTITIES[co];
+  $("pageTitle").textContent = admin ? "Admin Panel" : co;
+  $("canadaContent").classList.toggle("hidden", !connected);
+  $("coEmpty").classList.toggle("hidden", admin || connected);
+  $("btFilters").classList.toggle("hidden", !connected);
+  $("caRefresh").classList.toggle("hidden", !connected);
+}
+
+async function openAdmin() {
+  closeKpi();
+  showView("admin");
+  $("admBody").innerHTML = `<tr><td class="empty" colspan="8">Loading…</td></tr>`;
+  try {
+    const r = await api("/api/mongo", { dataset: "users" });
+    adm.users = r.users || []; adm.breakGlass = r.breakGlass || [];
+    renderUsers();
+  } catch (e) {
+    if (!["signed out", "no access"].includes(e.message)) $("admBody").innerHTML = `<tr><td class="empty" colspan="8">${esc(e.message)}</td></tr>`;
+  }
+}
+
+const fmtSignIn = (v) => { if (!v) return "—"; const d = new Date(v); return isNaN(d) ? "—" : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
+
+function renderUsers() {
+  const q = $("admSearch").value.trim().toLowerCase();
+  const rows = adm.users.filter((u) => !q || [u.name, u.email, u.role].some((v) => String(v || "").toLowerCase().includes(q)));
+  const active = adm.users.filter((u) => u.active !== false).length;
+  $("admCount").textContent = `${fmtInt(adm.users.length)} users · ${fmtInt(active)} active`;
+  const self = (u) => String(u.email).toLowerCase() === String(me.email).toLowerCase();
+  $("admBody").innerHTML = rows.length ? rows.map((u, i) => {
+    const isAdmin = /^admin$/i.test(String(u.role || ""));
+    const e = esc(u.email);
+    return `<tr data-email="${e}">
+      <td>${i + 1}</td><td>${esc(u.name || "")}</td><td>${e}${self(u) ? ' <span class="muted">(you)</span>' : ""}</td>
+      <td><select data-act="role" ${self(u) ? "disabled" : ""}><option${isAdmin ? "" : " selected"}>Viewer</option><option${isAdmin ? " selected" : ""}>Admin</option></select></td>
+      <td><input type="checkbox" data-act="active" ${u.active !== false ? "checked" : ""} ${self(u) ? "disabled" : ""} aria-label="Active"></td>
+      <td class="muted">${fmtSignIn(u.lastLoginAt)}</td>
+      <td class="muted">${esc(u.addedBy || "—")}</td>
+      <td>${self(u) ? "" : '<button type="button" class="link" data-act="delete">Remove</button>'}</td></tr>`;
+  }).join("") : `<tr><td class="empty" colspan="8">${adm.users.length ? "No users match." : "No users yet. Add the first one above."}</td></tr>`;
+}
+
+function admMsg(text, ok) { $("admMsg").textContent = text; $("admMsg").className = ok ? "ok" : "err"; }
+
+async function saveUser(u, done) {
+  try {
+    await api("/api/mongo", { dataset: "saveUser", email: u.email, name: u.name, role: u.role, active: u.active });
+    admMsg(done, true);
+  } catch (e) {
+    if (["signed out", "no access"].includes(e.message)) return;
+    admMsg(e.message, false);
+  }
+  await openAdmin();
+}
+
+$("navAdmin").onclick = openAdmin;
+$("admSearch").oninput = renderUsers;
+$("admAdd").onsubmit = async (e) => {
+  e.preventDefault();
+  const email = $("admEmail").value.trim().toLowerCase();
+  if (adm.users.some((u) => String(u.email).toLowerCase() === email)) { admMsg(`${email} is already on the list.`, false); return; }
+  await saveUser({ email, name: $("admName").value.trim(), role: $("admRole").value, active: true }, `${email} added. They can sign in now.`);
+  if ($("admMsg").className === "ok") { $("admEmail").value = ""; $("admName").value = ""; $("admRole").value = "Viewer"; }
+};
+$("admBody").onchange = (e) => {
+  const tr = e.target.closest("tr[data-email]"), act = e.target.dataset.act;
+  if (!tr || !["role", "active"].includes(act)) return;
+  const u = adm.users.find((x) => x.email === tr.dataset.email);
+  if (!u) return;
+  const next = { ...u, role: act === "role" ? e.target.value : u.role, active: act === "active" ? e.target.checked : u.active !== false };
+  saveUser(next, act === "role" ? `${u.email} is now ${next.role}.` : `${u.email} ${next.active ? "can sign in again" : "can no longer sign in"}.`);
+};
+$("admBody").onclick = async (e) => {
+  if (e.target.dataset.act !== "delete") return;
+  const email = e.target.closest("tr[data-email]").dataset.email;
+  if (!confirm(`Remove ${email} from the user list? They won't be able to sign in.`)) return;
+  try { await api("/api/mongo", { dataset: "deleteUser", email }); admMsg(`${email} removed.`, true); }
+  catch (err) { if (!["signed out", "no access"].includes(err.message)) admMsg(err.message, false); }
+  await openAdmin();
 };
 
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };

@@ -2,12 +2,22 @@
 //
 //   GET  /api/mongo?config=1        -> { googleClientId }                 (public; the client ID is not a secret)
 //   POST /api/mongo  { dataset: "me" } -> { email, name, picture, role }  (signed in)
+//   POST /api/mongo  { dataset: "users" }                          -> { users }   (admin)
+//   POST /api/mongo  { dataset: "saveUser", email, name, role, active } -> { ok }  (admin; adds or updates)
+//   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
 //
+// Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
+// per person { email, name, role: "Admin" | "Viewer", active }. Only active users on the list get in.
+// ADMIN_EMAILS always get in as Admin, so the list can't lock everyone out. Without AUDIT_URI the
+// old rule applies: anyone on an allowed domain is a Viewer.
 // The browser signs in with Google (OAuth client in Google Cloud project sar-group-internal-audit)
 // and sends "Authorization: Bearer <Google ID token>" on every call. api/mongo-batch.js uses the
 // same check (authenticate) for the data it returns.
 // Environment: GOOGLE_CLIENT_ID (optional, overrides the default below),
-//              ALLOWED_DOMAINS (default sarlogisolutions.com), ADMIN_EMAILS (comma-separated).
+//              ALLOWED_DOMAINS (default sarlogisolutions.com), ADMIN_EMAILS (comma-separated),
+//              AUDIT_URI (cluster holding sar-internal-audit; AUDIT_MONGO_DB renames it).
+
+import { MongoClient } from "mongodb";
 
 // OAuth Web client "sar-group-internal-audit". Not a secret; GOOGLE_CLIENT_ID overrides it.
 export const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
@@ -20,12 +30,73 @@ export class HttpError extends Error {
 const list = (v) => (v || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const allowedDomains = () => list(process.env.ALLOWED_DOMAINS || "sarlogisolutions.com");
 
-/** admin: ADMIN_EMAILS; viewer: anyone on an allowed domain; otherwise no access. */
-export function roleFor(email) {
+// ============================================================ MongoDB (shared with api/mongo-batch.js)
+const g = globalThis;
+g._auditMongo = g._auditMongo || new Map();   // connection string -> connecting client
+
+/** The database dbName on the cluster in the first of envNames that is set. */
+export async function connectDb(envNames, dbName) {
+  const envName = envNames.find((n) => process.env[n]) || envNames[0];
+  // Forgive common paste slips: spaces or new lines, surrounding quotes, a leading "NAME=".
+  const uri = String(process.env[envName] || "").trim()
+    .replace(/^[A-Z_]+\s*=\s*/, "").replace(/^["']|["']$/g, "").trim();
+  if (!uri) throw new HttpError(500, `${envNames[0]} is not set`);
+  if (!/^mongodb(\+srv)?:\/\//.test(uri)) {
+    throw new HttpError(500, `${envName} must start with mongodb+srv:// (it starts with "${uri.slice(0, 6)}…").`);
+  }
+  if (/<\s*(db_)?password\s*>/i.test(uri)) throw new HttpError(500, `${envName} still has the <PASSWORD> placeholder: put the real password in its place.`);
+  if (!g._auditMongo.has(uri)) {
+    const p = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, maxPoolSize: 3 }).connect();
+    p.catch(() => g._auditMongo.delete(uri));
+    g._auditMongo.set(uri, p);
+  }
+  try {
+    return (await g._auditMongo.get(uri)).db(dbName);
+  } catch (err) {
+    throw mongoError(err, envName, dbName);
+  }
+}
+
+// Turns a MongoDB driver error into a message that says what to fix (no secrets in it).
+export function mongoError(err, envName, dbName) {
+  console.error("mongo:", err);
+  // Mask any user:password@ the driver might echo back
+  const m = String(err && err.message || "").replace(/\/\/[^/@\s]*@/g, "//***@");
+  const name = String(err && err.name || "");
+  if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, `Database sign-in failed: check the user name and password in ${envName}.`);
+  if (/not authorized on|unauthorized/i.test(m)) return new HttpError(500, `The database user in ${envName} can't use ${dbName}: give it the right role on ${dbName}.`);
+  if (/unescaped characters|must be escaped|percent-encoded/i.test(m)) return new HttpError(500, `The password in ${envName} has special characters (@ : / ? # %) that must be URL-encoded, e.g. @ → %40.`);
+  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist/i.test(m)) return new HttpError(500, `Can't reach the database: check the cluster address in ${envName} and that Atlas Network Access allows Vercel (0.0.0.0/0).`);
+  if (name === "MongoParseError" || name === "MongoAPIError") return new HttpError(500, `${envName} can't be read: ` + m.slice(0, 200));
+  return new HttpError(500, "Database error: " + m.slice(0, 200));
+}
+
+// ============================================================ user list
+const AUDIT_DB = process.env.AUDIT_MONGO_DB || "sar-internal-audit";
+const usersCol = async () => (await connectDb(["AUDIT_URI"], AUDIT_DB)).collection("users");
+const isAdminEmail = (e) => list(process.env.ADMIN_EMAILS).includes(e);
+const userCache = new Map();   // email -> { doc, at }; a minute, so data calls don't each read the list
+const USER_TTL_MS = 60 * 1000;
+// Matches the email whatever its case in the list (people may type capitals in Atlas)
+const escapeRe = (s) => s.replace(/[.*+?^$()|[\]{}\\]/g, "\\$&");
+const emailQuery = (email) => ({ email: { $regex: "^" + escapeRe(email) + "$", $options: "i" } });
+
+async function listedUser(email) {
+  const hit = userCache.get(email);
+  if (hit && Date.now() - hit.at < USER_TTL_MS) return hit.doc;
+  const doc = await (await usersCol()).findOne(emailQuery(email));
+  userCache.set(email, { doc, at: Date.now() });
+  return doc;
+}
+
+/** "admin" | "viewer" | null (no access). */
+export async function roleFor(email) {
   const e = email.toLowerCase();
-  if (list(process.env.ADMIN_EMAILS).includes(e)) return "admin";
-  if (allowedDomains().includes(e.split("@")[1])) return "viewer";
-  return null;
+  if (isAdminEmail(e)) return "admin";
+  if (!process.env.AUDIT_URI) return allowedDomains().includes(e.split("@")[1]) ? "viewer" : null;
+  const u = await listedUser(e);
+  if (!u || u.active === false) return null;
+  return /^admin$/i.test(String(u.role || "").trim()) ? "admin" : "viewer";
 }
 
 const tokenCache = new Map(); // idToken -> { user, exp }
@@ -53,8 +124,8 @@ export async function authenticate(req) {
   const h = req.headers.authorization || "";
   if (!h.startsWith("Bearer ")) throw new HttpError(401, "Not signed in");
   const user = await verifyGoogleToken(h.slice(7));
-  const role = roleFor(user.email);
-  if (!role) throw new HttpError(403, `${user.email} does not have access to this dashboard`, "no_access");
+  const role = await roleFor(user.email);
+  if (!role) throw new HttpError(403, `${user.email} is not on the user list of this dashboard. Ask an Admin to add you.`, "no_access");
   return { ...user, role };
 }
 
@@ -64,13 +135,56 @@ export function sendError(res, err) {
   return res.status(known ? err.status : 500).json({ error: known ? err.message : "Server error", code: err.code });
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function manageUsers(me, body) {
+  const col = await usersCol();
+  if (body.dataset === "users") {
+    const users = await col.find({}, { projection: { _id: 0, email: 1, name: 1, role: 1, active: 1, addedBy: 1, addedAt: 1, updatedAt: 1, lastLoginAt: 1 } })
+      .sort({ name: 1, email: 1 }).toArray();
+    return { users, breakGlass: list(process.env.ADMIN_EMAILS) };
+  }
+  const email = String(body.email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) throw new HttpError(400, "Enter a valid email address.");
+  if (!allowedDomains().includes(email.split("@")[1])) throw new HttpError(400, `Only ${allowedDomains().join(", ")} accounts can be added.`);
+  userCache.delete(email);
+  if (body.dataset === "deleteUser") {
+    if (email === me.email) throw new HttpError(400, "You can't remove yourself.");
+    await col.deleteMany(emailQuery(email));
+    return { ok: true };
+  }
+  const role = /^admin$/i.test(String(body.role || "")) ? "Admin" : "Viewer";
+  const active = body.active !== false;
+  if (email === me.email && (role !== "Admin" || !active)) throw new HttpError(400, "You can't remove your own Admin access.");
+  const now = new Date();
+  await col.updateOne(
+    emailQuery(email),
+    { $set: { email, name: String(body.name || "").trim() || email, role, active, updatedAt: now, updatedBy: me.email },
+      $setOnInsert: { addedAt: now, addedBy: me.email } },
+    { upsert: true },
+  );
+  return { ok: true };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method === "GET" && req.query && req.query.config) return res.status(200).json({ googleClientId: GOOGLE_CLIENT_ID });
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
-    const { dataset } = req.body || {};
-    if (dataset === "me") return res.status(200).json(await authenticate(req));
+    const body = req.body || {};
+    const me = await authenticate(req);
+    if (body.dataset === "me") {
+      if (process.env.AUDIT_URI) {
+        (await usersCol()).updateOne(emailQuery(me.email), { $set: { lastLoginAt: new Date() } })
+          .catch((err) => console.error("lastLoginAt:", err));
+      }
+      return res.status(200).json(me);
+    }
+    if (["users", "saveUser", "deleteUser"].includes(body.dataset)) {
+      if (me.role !== "admin") throw new HttpError(403, "Only an Admin can manage users.");
+      if (!process.env.AUDIT_URI) throw new HttpError(500, "AUDIT_URI is not set: the user list needs it.");
+      return res.status(200).json(await manageUsers(me, body));
+    }
     throw new HttpError(400, "Unknown request");
   } catch (err) {
     return sendError(res, err);

@@ -34,8 +34,7 @@
 // (sar-id-ops), THAILAND_URI (sar-th-ops); the others fall back to CANADA_URI when they are on the
 // same cluster. CA_ / USA_ / ID_ / TH_MONGO_DB rename the databases. A read-only Atlas user is enough.
 
-import { MongoClient } from "mongodb";
-import { authenticate, sendError, HttpError } from "./mongo.js";
+import { authenticate, sendError, HttpError, connectDb, mongoError } from "./mongo.js";
 
 const ENTITIES = {
   canada: { envs: ["CANADA_URI", "CA_MONGO_URI"], db: process.env.CA_MONGO_DB || "sar-ca-ops" },
@@ -45,9 +44,6 @@ const ENTITIES = {
 };
 const TTL_MS = 5 * 60 * 1000;
 
-const g = globalThis;
-g._auditMongo = g._auditMongo || new Map();   // connection string -> connecting client
-
 function entityOf(name) {
   const e = ENTITIES[name];
   if (!e) throw new HttpError(400, "Unknown company");
@@ -56,25 +52,7 @@ function entityOf(name) {
 
 async function getDb(entity) {
   const e = entityOf(entity);
-  const envName = e.envs.find((n) => process.env[n]) || e.envs[0];
-  // Forgive common paste slips: spaces or new lines, surrounding quotes, a leading "NAME=".
-  const uri = String(process.env[envName] || "").trim()
-    .replace(/^[A-Z_]+\s*=\s*/, "").replace(/^["']|["']$/g, "").trim();
-  if (!uri) throw new HttpError(500, `${e.envs[0]} is not set`);
-  if (!/^mongodb(\+srv)?:\/\//.test(uri)) {
-    throw new HttpError(500, `${envName} must start with mongodb+srv:// (it starts with "${uri.slice(0, 6)}…").`);
-  }
-  if (/<\s*(db_)?password\s*>/i.test(uri)) throw new HttpError(500, `${envName} still has the <PASSWORD> placeholder: put the real password in its place.`);
-  if (!g._auditMongo.has(uri)) {
-    const p = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, maxPoolSize: 3 }).connect();
-    p.catch(() => g._auditMongo.delete(uri));
-    g._auditMongo.set(uri, p);
-  }
-  try {
-    return (await g._auditMongo.get(uri)).db(e.db);
-  } catch (err) {
-    throw mongoError(err, envName, e.db);
-  }
+  return connectDb(e.envs, e.db);
 }
 
 const toNum = (v) => { const n = typeof v === "number" ? v : parseFloat(String(v ?? "").replace(/[,\s]/g, "")); return isNaN(n) ? 0 : n; };
@@ -387,16 +365,3 @@ export default async function handler(req, res) {
   }
 }
 
-// Turns a MongoDB driver error into a message that says what to fix (no secrets in it).
-function mongoError(err, envName, dbName) {
-  console.error("mongo-batch:", err);
-  // Mask any user:password@ the driver might echo back
-  const m = String(err && err.message || "").replace(/\/\/[^/@\s]*@/g, "//***@");
-  const name = String(err && err.name || "");
-  if (/authentication failed|bad auth/i.test(m)) return new HttpError(500, `Database sign-in failed: check the user name and password in ${envName}.`);
-  if (/not authorized on|unauthorized/i.test(m)) return new HttpError(500, `The database user in ${envName} can't read ${dbName}: give it the read role on ${dbName}.`);
-  if (/unescaped characters|must be escaped|percent-encoded/i.test(m)) return new HttpError(500, `The password in ${envName} has special characters (@ : / ? # %) that must be URL-encoded, e.g. @ → %40.`);
-  if (/Server selection timed out|ENOTFOUND|ECONNREFUSED|querySrv|whitelist/i.test(m)) return new HttpError(500, `Can't reach the database: check the cluster address in ${envName} and that Atlas Network Access allows Vercel (0.0.0.0/0).`);
-  if (name === "MongoParseError" || name === "MongoAPIError") return new HttpError(500, `${envName} can't be read: ` + m.slice(0, 200));
-  return new HttpError(500, "Database error: " + m.slice(0, 200));
-}
