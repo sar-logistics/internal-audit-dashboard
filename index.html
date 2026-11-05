@@ -253,6 +253,10 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V8"/></svg>
         <span>Cost Not Posted</span>
       </div>
+      <div class="nav-item" data-report="fin" title="Finance Pendency">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2M8 10v1.5"/></svg>
+        <span>Finance Pendency</span>
+      </div>
     </nav>
     <nav class="nav nav-sys hidden" id="sysNav">
       <div class="nav-label">System</div>
@@ -319,6 +323,11 @@
       <div class="kpi-row rep two hidden" data-for="cost">
         <div class="kpi stripe-teal kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Unposted Cost</div><div class="value" id="kCsAmt">–</div><div class="delta soft" id="kCsAmtSub">&nbsp;</div></div>
         <div class="kpi stripe-orange kpi-click" data-kpi="uc" tabindex="0" role="button"><div class="label">Count of Unposted Cost</div><div class="value orange" id="kCsCnt">–</div><div class="delta soft" id="kCsCntSub">&nbsp;</div></div>
+      </div>
+
+      <div class="kpi-row rep two hidden" data-for="fin">
+        <div class="kpi stripe-orange kpi-click" data-kpi="fp" tabindex="0" role="button"><div class="label">Financial Lock Pending Jobs</div><div class="value orange" id="kFp">–</div><div class="delta soft" id="kFpSub">&nbsp;</div></div>
+        <div class="kpi stripe-ink kpi-click" data-kpi="tj" tabindex="0" role="button"><div class="label">Total Jobs</div><div class="value" id="kFpTotal">–</div><div class="delta soft" id="kFpTotalSub">&nbsp;</div></div>
       </div>
 
       <div class="panel">
@@ -512,6 +521,7 @@ $("caRefresh").onclick = () => loadCompany(true);
 //   Open Jobs:          jobs not yet operation-locked (isOpen, else no Operation Lock Date)
 //   Revenue Not Billed: estimatedvsactual jobs whose summed unbilled revenue is > 0
 //   Cost Not Posted:    estimatedvsactual jobs whose summed unposted cost is > 0
+//   Finance Pendency:   jobs with no Financial Lock Date (finPending from api/mongo-batch.js)
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
 const AV_COLORS = ["#3F6E1E", "#2C4E82", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
@@ -520,6 +530,7 @@ const REPORTS = {
   open:  { title: "Open Jobs",          pool: "jobs", flag: (r) => !!r.open,                           count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} open` },
   rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => !!r.revFlag,  amtKey: "unbilledRevenue" },
   cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => !!r.costFlag, amtKey: "unpostedCost" },
+  fin:   { title: "Finance Pendency",   pool: "jobs", flag: (r) => !!r.finPending,                     count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} pending` },
 };
 const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
 
@@ -615,6 +626,11 @@ function renderKpis() {
   $("kOjSub").textContent = ent().openNote || "Not yet operation-locked";
   $("kOjPct").textContent = jobs.length ? `${(open / jobs.length * 100).toFixed(1)}%` : "–";
   $("kOjPctSub").textContent = `${fmtInt(open)} of ${fmtInt(jobs.length)} job${jobs.length === 1 ? "" : "s"}`;
+  const finPending = jobs.filter(KPI_VIEWS.fp.flag).length;
+  $("kFp").textContent = fmtInt(finPending);
+  $("kFpSub").textContent = `No financial lock date · ${jobs.length ? (finPending / jobs.length * 100).toFixed(1) : "0.0"}% of jobs`;
+  $("kFpTotal").textContent = fmtInt(jobs.length);
+  $("kFpTotalSub").textContent = period;
   $("kRvAmt").textContent = fmtMoney(sum(ur, "unbilledRevenue"));
   $("kRvAmtSub").textContent = period;
   $("kRvCnt").textContent = fmtInt(ur.length);
@@ -828,10 +844,12 @@ DRILLS_BY_DATASET.indonesia = {
            cols: colList("shipmentId:Job #;chargeCode:Charge;accrual:Accrual:n;cost:Cost:n;wip:WIP:n;revenue:Revenue:n;" + ID_WIP_TAIL + ID_WIP_REST) },
 };
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
+Object.values(DRILLS_BY_DATASET).forEach((d) => { d.fin = d.open; });   // Finance Pendency pop-ups: the Open Jobs columns
 const drills = () => DRILLS_BY_DATASET[ent().dataset];
 const KPI_VIEWS = {
   tj: { title: "Total Jobs Created",     pool: "jobs", flag: () => true,          drill: "total" },
   oj: { title: "Open Jobs",              pool: "jobs", flag: (r) => !!r.open,     drill: "open" },
+  fp: { title: "Financial Lock Pending Jobs", pool: "jobs", flag: (r) => !!r.finPending, drill: "fin" },
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => !!r.revFlag,  drill: "rev" },
   uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => !!r.costFlag, drill: "cost" },
 };
