@@ -974,8 +974,9 @@ function renderKpiRows() {
     rows.forEach((r) => { const v = parseFloat(r[c.key]); if (!isNaN(v)) { sum += v; any = true; } });
     return any ? fmtMoney(sum) : "";
   };
-  $("kmFoot").innerHTML = rows.length && d.cols.some((c) => c.num)
-    ? `<tr><td></td>${d.cols.map((c, i) => i === 0 ? "<td>Grand Total</td>"
+  // Shown in every pop-up: the # cell holds the row count; job lists without amounts show just that
+  $("kmFoot").innerHTML = rows.length
+    ? `<tr><td>${fmtInt(rows.length)}</td>${d.cols.map((c, i) => i === 0 ? "<td>Grand Total</td>"
       : `<td class="${c.num ? "num" : ""}">${c.num ? sumCol(c) : ""}</td>`).join("")}</tr>`
     : "";
 }
