@@ -81,6 +81,13 @@
   .btn-refresh:disabled { opacity: .7; cursor: default; }
   .btn-refresh.spinning svg { animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 42px; height: 42px; border: 4px solid #DCE3F0; border-top-color: #2C4E82; border-radius: 50%; animation: spin .8s linear infinite; }
+  .spinner.sm { width: 18px; height: 18px; border-width: 3px; }
+  #canadaContent { position: relative; }
+  #canadaContent.is-loading { min-height: 460px; }
+  .loader { position: absolute; inset: 0; z-index: 5; background: rgba(244,246,250,0.85); display: flex; flex-direction: column;
+            align-items: center; padding-top: 140px; gap: 16px; color: var(--ink-soft); font-size: 14px; font-weight: 600; }
+  .login-busy { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; color: var(--ink-soft); font-size: 14px; font-weight: 600; }
   .btn-signout { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; cursor: pointer;
                  background: var(--paper); border: 1px solid var(--line); color: var(--ink-soft); }
   .btn-signout:hover { background: #D6534A; border-color: #D6534A; color: #fff; }
@@ -214,6 +221,7 @@
     <h1>SAR Internal Audit</h1>
     <p>Sign in with your SAR Google Workspace account to access the SAR Internal Audit Dashboard.</p>
     <div id="gsiButton"></div>
+    <div id="loginBusy" class="login-busy hidden"><span class="spinner sm"></span>Signing in…</div>
     <div id="loginMsg" class="hidden"></div>
     <div class="login-divider">Restricted Access</div>
     <div class="login-footer">Access is restricted to authorised SAR team members.<br>Contact <b>Admin</b> to request access.</div>
@@ -295,6 +303,7 @@
     </div>
     <div class="content hidden" id="coEmpty"><div class="co-empty" id="coEmptyText"></div></div>
     <div class="content" id="canadaContent">
+      <div class="loader hidden" id="caLoader" role="status" aria-live="polite"><span class="spinner"></span><span id="caLoaderText">Loading…</span></div>
       <div id="caError" class="hidden"></div>
 
       <!-- Cards for the report picked in the sidebar, as in the CA ops dashboard (Total Jobs Created has none) -->
@@ -408,8 +417,11 @@ async function api(path, body) {
 }
 
 async function start() {
+  $("loginMsg").classList.add("hidden");
+  $("loginBusy").classList.remove("hidden");
   try { me = await api("/api/mongo", { dataset: "me" }); }
   catch (e) { if (!["signed out", "no access"].includes(e.message)) showLogin("Couldn't sign in: " + e.message); return; }
+  finally { $("loginBusy").classList.add("hidden"); }
   $("meName").textContent = me.name;
   $("greeting").textContent = `Hello ${String(me.name).split(" ")[0]} - ${me.role === "admin" ? "Admin" : "Viewer"}`;
   $("meAvatar").src = me.picture || "";
@@ -468,8 +480,9 @@ function showLoaded(k) {
 
 async function loadCompany(refresh) {
   const co = company;
-  if (!refresh && loaded[co]) return showLoaded(loaded[co]);
-  showLoaded(null);
+  if (!refresh && loaded[co]) { setLoading(false); return showLoaded(loaded[co]); }   // also clears a spinner left by the previous tab
+  if (!refresh) showLoaded(null);   // a refresh keeps the current numbers under the spinner
+  setLoading(true, `${refresh ? "Refreshing" : "Loading"} ${co} data…`);
   $("caRefresh").disabled = true;
   $("caRefresh").classList.add("spinning");
   $("caError").classList.add("hidden");
@@ -482,9 +495,15 @@ async function loadCompany(refresh) {
     $("caError").textContent = `Couldn't load ${co} data: ` + e.message;
     $("caError").classList.remove("hidden");
   } finally {
+    if (co === company) setLoading(false);
     $("caRefresh").disabled = false;
     $("caRefresh").classList.remove("spinning");
   }
+}
+function setLoading(on, text) {
+  if (text) $("caLoaderText").textContent = text;
+  $("caLoader").classList.toggle("hidden", !on);
+  $("canadaContent").classList.toggle("is-loading", on);
 }
 $("caRefresh").onclick = () => loadCompany(true);
 
