@@ -25,7 +25,8 @@
 //     Import) more than 7 days ago.
 //   • Revenue Not Billed: the job has WIP lines with WIP > 0 and its ETD / ETA is more than 3 days
 //     ago; amount = those lines' WIP. Cost Not Posted: accrual lines ≠ 0 and ETD / ETA more than
-//     7 days ago; amount = their accrual. WIP lines are in th_ops_wip. Amounts are in IDR.
+//     7 days ago; amount = their accrual × −1 (accruals are stored negative; shown as positive cost).
+//     WIP lines are in th_ops_wip. Amounts are in IDR.
 // SAR Thailand — the SAR Thailand Sea Ops dashboard has the same rules as Indonesia (database
 //   sar-th-ops; cross trade in th_ops_crosstrade). Amounts are in THB.
 // All: Financial / Operation Lock Pending = the job has no lock date.
@@ -263,7 +264,7 @@ async function seaOpsData(db, entity) {
                     !(filled(d.financialsLockedOn) || filled(d.financialLock)),
                     !(filled(d.operationsLockedOn) || filled(d.operationLock))]);
     const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0 };
-    evaJobs.rows.push([...base, round2(t.wip), round2(t.accrual),
+    evaJobs.rows.push([...base, round2(t.wip), round2(-t.accrual),   // accrual is negative: unposted cost = −accrual
                        t.wipLines > 0 && !!threshold && threshold < cut3, t.accLines > 0 && !!threshold && threshold < cut7]);
   }
   const iso = (ms) => ms ? new Date(ms).toISOString() : "";
@@ -318,7 +319,10 @@ async function chargeLines(db, entity, body) {
   const cost = body.kind === "cost";
   if (SEA_JOB_COLLECTIONS[entity]) {
     const filter = { shipmentId: anyOf(ids), ...(cost ? { accrual: { $nin: [0, null, ""] } } : { wip: { $gt: 0 } }) };
-    return { rows: await db.collection(ID_WIP).find(filter, { projection: projectionOf(ID_WIP_FIELDS) }).toArray() };
+    const rows = await db.collection(ID_WIP).find(filter, { projection: projectionOf(ID_WIP_FIELDS) }).toArray();
+    // Cost Not Posted shows the accrual × −1, matching the card and table
+    if (cost) for (const w of rows) if (filled(w.accrual)) w.accrual = -toNum(w.accrual);
+    return { rows };
   }
   if (entity === "usa") {
     const filter = { shipmentId: anyOf(ids), lobExportImport: { $regex: US_LOB_RE.source, $options: "i" },
