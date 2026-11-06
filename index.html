@@ -543,7 +543,7 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
-  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago", costNote: "Ops-locked, unposted cost ≥ 1" },   // air only for now, as the India Air Operations dashboard; INR only
+  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago" },   // air only for now, as the India Air Operations dashboard; INR only
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
   "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
