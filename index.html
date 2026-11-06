@@ -550,7 +550,7 @@ let company = "SAR Canada";
 const ent = () => ENTITIES[company];
 const loaded = {};   // company -> api response, so switching tabs back doesn't reload
 
-const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });   // amounts in whole numbers
 // Amounts are stored in each company's own currency (CAD, IDR, USD). They are shown in USD by default
 // at an exchange rate the viewer can change (1 USD = 1.4 CAD, 17,500 IDR, 32.5 THB to start), or in
 // the local currency. Each rate is remembered in this browser only.
@@ -566,7 +566,7 @@ const rateOf = (cur) => {
 const isLocalCurrency = () => ent().source !== "USD";
 const currency = () => isLocalCurrency() ? $("btCur").value : "USD";
 const toShown = (v) => isLocalCurrency() && currency() === "USD" ? (Number(v) || 0) / rateOf(ent().source) : (Number(v) || 0);
-const fmtMoney = (v) => { const n = toShown(v); return currency() === "USD" ? `${n < 0 ? "-" : ""}$${fmtAmt(Math.abs(n))}` : `${currency()} ${fmtAmt(n)}`; };
+const fmtMoney = (v) => { const n = Math.round(toShown(v)) || 0; return currency() === "USD" ? `${n < 0 ? "-" : ""}$${fmtAmt(Math.abs(n))}` : `${currency()} ${fmtAmt(n)}`; };
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {
   const d = iso ? new Date(iso) : null;
