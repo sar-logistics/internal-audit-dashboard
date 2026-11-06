@@ -543,7 +543,7 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
-  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true },   // air only for now; SAR USA rules; INR only, no USD view
+  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago", costNote: "Ops-locked, unposted cost ≥ 1" },   // air only for now, as the India Air Operations dashboard; INR only
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
   "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
@@ -551,7 +551,7 @@ let company = "SAR Canada";
 const ent = () => ENTITIES[company];
 const loaded = {};   // company -> api response, so switching tabs back doesn't reload
 
-const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });   // amounts in whole numbers
+const fmtAmt = (n, locale = "en-US") => Number(n || 0).toLocaleString(locale, { maximumFractionDigits: 0 });   // amounts in whole numbers
 // Amounts are stored in each company's own currency (CAD, IDR, INR, THB, USD). They are shown in USD by default
 // at an exchange rate the viewer can change (1 USD = 1.4 CAD, 17,500 IDR, 32.5 THB to start), or in
 // the local currency. Each rate is remembered in this browser only. STSPL (localOnly) is shown in INR only.
@@ -569,8 +569,9 @@ const currency = () => ent().localOnly ? ent().source : isLocalCurrency() ? $("b
 const toShown = (v) => isLocalCurrency() && currency() === "USD" ? (Number(v) || 0) / rateOf(ent().source) : (Number(v) || 0);
 const CUR_SYMBOL = { USD: "$", INR: "₹" };   // the others show their code, e.g. "CAD 1,235"
 const fmtMoney = (v) => {
-  const n = Math.round(toShown(v)) || 0, sym = CUR_SYMBOL[currency()];
-  return sym ? `${n < 0 ? "-" : ""}${sym}${fmtAmt(Math.abs(n))}` : `${currency()} ${fmtAmt(n)}`;
+  const n = Math.round(toShown(v)) || 0, cur = currency(), sym = CUR_SYMBOL[cur];
+  const amt = fmtAmt(sym ? Math.abs(n) : n, cur === "INR" ? "en-IN" : "en-US");   // INR in lakh grouping: ₹9,30,223
+  return sym ? `${n < 0 ? "-" : ""}${sym}${amt}` : `${cur} ${amt}`;
 };
 const fmtInt = (n) => Number(n || 0).toLocaleString("en-US");
 const fmtWhen = (iso) => {

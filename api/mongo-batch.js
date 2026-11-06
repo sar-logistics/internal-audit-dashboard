@@ -19,8 +19,11 @@
 //   • Unbilled Revenue / Unposted Cost: usa_ops_etdeta charge lines of Sea / Air / Road Export and
 //     Import (lobExportImport), summed per shipment; period = ETD/ETA New. Amounts are in USD.
 //   • Jobs: usa_ops_jobs (every LOB). Period = ETD/ETA New › Job Date. Open = no Operation Lock Date.
-// STSPL (India, air only for now) — the SAR USA rules on database sar-in-air-ops: jobs in air_ops_export
-//   and air_ops_import, charge lines in air_ops_etdeta (AIR EXPORT / IMPORT). Amounts are in INR.
+// STSPL (India, air only for now) — same rules as the SAR India Air Operations dashboard (database
+//   sar-in-air-ops): jobs in air_ops_export and air_ops_import, charge lines in air_ops_etdeta, read
+//   like SAR USA. Open = no Operation Lock Date and ETD/ETA New + 7 days has passed. Revenue Not
+//   Billed = unbilled revenue ≥ 1 and ETD/ETA New more than 3 days ago. Cost Not Posted = unposted
+//   cost ≥ 1 and the job is operation-locked. Days count from midnight IST. Amounts are in INR.
 // SAR Indonesia — same rules as the SAR Indonesia Sea Ops dashboard (database sar-id-ops):
 //   • Jobs: th_ops_export, th_ops_import and id_ops_crosstrade. Direction from the LOB code (FES, FIA…);
 //     period = ETA (Import) or ETD, else Job Opened. Open = status not CMP / CLS and ETD (ETA for
@@ -157,14 +160,23 @@ async function canadaData(db) {
 // STSPL air is laid out like SAR USA (same sync), so it goes through the same functions with its own collections.
 const US_LIKE = {
   usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta" },
-  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta" },
+  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true },
 };
+// India Air Operations dashboard rules (cfg.air): amounts count from 1, and its day cut-offs run from today's
+// midnight in IST
+const AIR_MIN = 1;
+const IST_MS = 5.5 * 36e5;
+const istToday = () => Math.floor((Date.now() + IST_MS) / 864e5) * 864e5 - IST_MS;
+const timeOf = (v) => { const t = v ? new Date(v).getTime() : NaN; return isNaN(t) ? null : t; };
 const US_LOB_RE = /^(SEA|AIR|ROAD) (EXPORT|IMPORT)$/;
 const titleCase = (s) => String(s).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+// Air: Ops Lock Pendency (ETD+7) = not operation-locked and ETD/ETA New + 7 days has passed
+const isAirOpen = (d, today) => { const t = timeOf(d.etdEtaNew); return !filled(d.operationLockDate) && t !== null && today >= t + 7 * 864e5; };
 
 // One row per job in usa_ops_jobs, as the USA dashboard reads them: branch = jobBranch › branch ›
 // location, owner = operator › jobOwner, period = ETD/ETA New › Job Date, open = no Operation Lock Date.
 async function usaJobs(db, cfg) {
+  const today = istToday();
   const docs = (await Promise.all(cfg.jobs.map((name) => db.collection(name)
     .find({}, { projection: { _id: 0, shipmentId: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1,
                               jobOwner: 1, etdEtaNew: 1, jobDate: 1, operationLockDate: 1, operationLock: 1,
@@ -176,7 +188,7 @@ async function usaJobs(db, cfg) {
       String(d.shipmentId ?? ""), direction, lob,
       d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
       d.etdEtaNew || d.jobDate || "",
-      !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
+      cfg.air ? isAirOpen(d, today) : !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
     ];
   }) };
 }
@@ -187,7 +199,7 @@ async function usaJobs(db, cfg) {
 async function usaEvaJobs(db, cfg) {
   const rows = await db.collection(cfg.etdeta)
     .find({}, { projection: { _id: 0, shipmentId: 1, lobExportImport: 1, location: 1, jobOwner: 1, etdEtaNew: 1,
-                              unbilledRevenue: 1, unpostedCost: 1 } }).toArray();
+                              unbilledRevenue: 1, unpostedCost: 1, operationLockDate: 1 } }).toArray();
   const byJob = new Map();
   for (const e of rows) {
     const job = String(e.shipmentId ?? "").trim();
@@ -197,15 +209,21 @@ async function usaEvaJobs(db, cfg) {
     let t = byJob.get(key);
     if (!t) {
       t = { job, lob, direction: titleCase(lob.split(" ")[1]), location: e.location || "", jobOwner: e.jobOwner || "",
-            etdEtaNew: e.etdEtaNew || "", rev: 0, cost: 0 };
+            etdEtaNew: e.etdEtaNew || "", locked: filled(e.operationLockDate), rev: 0, cost: 0 };
       byJob.set(key, t);
     }
     t.rev  += toNum(e.unbilledRevenue);
     t.cost += toNum(e.unpostedCost);
   }
-  return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => evaRow([
-    t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew,
-  ], t.rev, t.cost)) };
+  // Air (groupEtdEtaByShipment + _renderEtdEtaFlagged in the India Air dashboard): Billing Pendency =
+  // unbilled ≥ 1 and ETD/ETA New before today − 3 days; Pending Cost = unposted ≥ 1 and the first line ops-locked
+  const cut3 = istToday() - 3 * 864e5;
+  return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => {
+    const base = [t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew];
+    if (!cfg.air) return evaRow(base, t.rev, t.cost);
+    const etd = timeOf(t.etdEtaNew);
+    return [...base, round2(t.rev), round2(t.cost), t.rev >= AIR_MIN && etd !== null && etd < cut3, t.cost >= AIR_MIN && t.locked];
+  }) };
 }
 
 // Last refreshed: the _meta push stamps when there are any (SAR USA), else the newest record's _id time.
@@ -343,7 +361,7 @@ async function chargeLines(db, entity, body) {
   }
   if (US_LIKE[entity]) {
     const filter = { shipmentId: anyOf(ids), lobExportImport: { $regex: US_LOB_RE.source, $options: "i" },
-                     [cost ? "unpostedCost" : "unbilledRevenue"]: { $gt: 0 } };
+                     [cost ? "unpostedCost" : "unbilledRevenue"]: US_LIKE[entity].air ? { $gte: AIR_MIN } : { $gt: 0 } };
     const fields = entity === "stspl" ? US_CHARGE_FIELDS.map((f) => f.replace(/Usd$/, "Inr")) : US_CHARGE_FIELDS;
     return { rows: await db.collection(US_LIKE[entity].etdeta).find(filter, { projection: projectionOf(fields) }).toArray() };
   }
