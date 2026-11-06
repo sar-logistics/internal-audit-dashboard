@@ -43,7 +43,8 @@
   /* signed in: navy sidebar + white top bar + content */
   #app { display: flex; min-height: 100vh; }
   .sidebar { width: 248px; flex-shrink: 0; background: var(--sidebar); color: #E4E9F2; display: flex; flex-direction: column;
-             position: sticky; top: 0; height: 100vh; border-right: 1px solid #14274A; transition: width .18s ease; z-index: 40; }
+             position: sticky; top: 0; height: 100vh; border-right: 1px solid #14274A; transition: width .18s ease; z-index: 40;
+             overflow-x: hidden; overflow-y: auto; }
   .sb-toggle { margin-left: auto; flex-shrink: 0; width: 28px; height: 28px; display: grid; place-items: center; border: none;
                border-radius: 7px; background: rgba(255,255,255,0.08); color: #B7C4DC; cursor: pointer; }
   .sb-toggle:hover { background: rgba(255,255,255,0.16); color: #fff; }
@@ -66,7 +67,9 @@
   .brand-sub { white-space: nowrap; font-size: 11.5px; color: #8CA0C4; line-height: 1.35; }
   .greeting { padding: 0 22px 14px; font-size: 12.5px; font-weight: 600; color: #9AB0D4; text-transform: uppercase;
               letter-spacing: .3px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 6px; }
-  .nav { padding: 18px 12px; flex: 1; overflow-y: auto; }
+  /* The menus keep their full height (Reports and System used to split the space and each scroll); the
+     footer sits at the bottom, and only a very short window scrolls the whole sidebar. */
+  .nav { padding: 18px 12px; flex: none; }
   .nav-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px; color: #7C90B4; padding: 8px 12px; font-weight: 700; }
   .nav-item { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-radius: 8px; color: #B7C4DC;
               font-size: 13.5px; font-weight: 600; position: relative; cursor: pointer; margin-bottom: 2px; }
@@ -75,7 +78,7 @@
   .nav-item.active::before { content: ""; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 3px;
                              border-radius: 0 3px 3px 0; background: #fff; }
   .nav-item svg { flex-shrink: 0; }
-  .sidebar-foot { padding: 16px 24px 22px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 11.5px; color: #8CA0C4; }
+  .sidebar-foot { margin-top: auto; padding: 16px 24px 22px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 11.5px; color: #8CA0C4; }
   .data-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
   .data-pill { display: flex; align-items: center; gap: 6px; background: #E8F7EE; color: #1F9D5A; font-size: 12px;
                font-weight: 700; padding: 7px 13px; border-radius: 20px; white-space: nowrap; }
@@ -206,6 +209,16 @@
   .kpi-click { cursor: pointer; transition: box-shadow .15s ease, border-color .15s ease; }
   .kpi-click:hover, .kpi-click:focus-visible { box-shadow: 0 4px 16px rgba(15,42,77,0.12); border-color: var(--accent); outline: none; }
   .nav-sys { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
+  @media (max-height: 760px) {   /* laptop screens: tighter menu so every report shows without scrolling */
+    .brand { padding: 14px 18px 12px 22px; min-height: 56px; }
+    .greeting { padding-bottom: 10px; }
+    .nav { padding: 10px 12px; }
+    .nav-label { padding: 6px 12px; }
+    .nav-item, #app.sb-min .nav-item { padding-top: 8px; padding-bottom: 8px; }
+    .nav-sys { margin-top: 4px; padding-top: 6px; }
+    .sidebar-foot { padding: 10px 24px 14px; }
+    .data-row { margin-bottom: 8px; }
+  }
   .adm-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); background: #FAFBFD; }
   .adm-add input { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; background: var(--card); }
   .adm-add select, .adm-tbl select { border-radius: 8px; }
