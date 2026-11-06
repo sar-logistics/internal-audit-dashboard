@@ -543,6 +543,7 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
+  "STSPL":         { dataset: "stspl",     source: "INR", defaultRate: 88 },   // air only for now; SAR USA rules
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
   "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
@@ -551,8 +552,8 @@ const ent = () => ENTITIES[company];
 const loaded = {};   // company -> api response, so switching tabs back doesn't reload
 
 const fmtAmt = (n) => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });   // amounts in whole numbers
-// Amounts are stored in each company's own currency (CAD, IDR, USD). They are shown in USD by default
-// at an exchange rate the viewer can change (1 USD = 1.4 CAD, 17,500 IDR, 32.5 THB to start), or in
+// Amounts are stored in each company's own currency (CAD, IDR, INR, THB, USD). They are shown in USD by default
+// at an exchange rate the viewer can change (1 USD = 1.4 CAD, 17,500 IDR, 88 INR, 32.5 THB to start), or in
 // the local currency. Each rate is remembered in this browser only.
 const rateKey = (cur) => cur === "CAD" ? "auditCadPerUsd" : `auditRate_${cur}`;
 const rates = {};
@@ -991,13 +992,13 @@ const US_COLS_TOTAL_JOBS = withAfter(withAfter(COLS_TOTAL_JOBS, "shipmentId", { 
                                      "cargoType", { key: "lob", label: "LOB" });
 const US_COLS_OPEN_JOBS = withAfter(withAfter(COLS_OPEN_JOBS, "shipmentId", { key: "direction", label: "Direction" }),
                                     "cargoType", { key: "lob", label: "LOB" });
-const usEvaCols = (amtKey, amtLabel, amts) => [
+const usEvaCols = (amtKey, amtLabel, amts, cur = "Usd") => [
   { key: "shipmentId", label: "Job No." }, { key: "etdEtaNew", label: "ETD/ETA New", date: true }, { key: "charge", label: "Charge" },
   { key: amtKey, label: amtLabel, num: true }, { key: "lob", label: "LOB" }, { key: "jobDate", label: "Job Date", date: true },
   { key: "organization", label: "Organization" }, { key: "jobOwner", label: "Job Owner" },
   { key: "operationLockDate", label: "Operation Lock Date", date: true },
   ...[...amts, "estimatedProfit:Estimated Profit", "actualProfit:Actual Profit"]
-    .map((x) => { const [key, label] = x.split(":"); return { key: key + "Usd", label, num: true }; }),
+    .map((x) => { const [key, label] = x.split(":"); return { key: key + cur, label, num: true }; }),
   { key: "financialLockDate", label: "Financial Lock Date", date: true },
   { key: "receivableFrom", label: "Receivable From" }, { key: "payableTo", label: "Payable To" },
 ];
@@ -1041,6 +1042,12 @@ DRILLS_BY_DATASET.indonesia = {
            cols: colList("shipmentId:Job #;chargeCode:Charge;wip:WIP:n;revenue:Revenue:n;accrual:Accrual:n;" + ID_WIP_TAIL + "cost:Cost:n;" + ID_WIP_REST) },
   cost:  { kind: "cost", amtKey: "accrual",
            cols: colList("shipmentId:Job #;chargeCode:Charge;accrual:Accrual:n;cost:Cost:n;wip:WIP:n;revenue:Revenue:n;" + ID_WIP_TAIL + ID_WIP_REST) },
+};
+// STSPL air: the SAR USA columns, with the ...Inr amounts of air_ops_etdeta
+DRILLS_BY_DATASET.stspl = {
+  ...DRILLS_BY_DATASET.usa,
+  rev:   { kind: "rev",  cols: usEvaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS, "Inr"), amtKey: "unbilledRevenue" },
+  cost:  { kind: "cost", cols: usEvaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS, "Inr"),     amtKey: "unpostedCost" },
 };
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
 Object.values(DRILLS_BY_DATASET).forEach((d) => { d.fin = d.open; });   // Finance Pendency pop-ups: the Open Jobs columns
