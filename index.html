@@ -543,7 +543,7 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
-  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago", costNote: "Ops-locked, unposted cost ≥ 1" },   // air only for now, as the India Air Operations dashboard; INR only
+  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago", costNote: "Ops-locked, unposted cost ≥ 1" },   // air only for now, as the India Air Operations dashboard; INR only
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
   "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
@@ -718,9 +718,14 @@ function unpack(set) {
   });
 }
 
+// since: [year, month index] = the company's first month; its periods run from there to this month.
+const sinceDate = () => ent().since ? new Date(ent().since[0], ent().since[1], 1) : null;
+
 function setBranchData(jobs, evaJobs) {
-  bt.jobs = unpack(jobs);
-  bt.eva = unpack(evaJobs);
+  const start = sinceDate(), from = start ? dayNum(start) : null;
+  const keep = (rows) => from === null ? rows : rows.filter((r) => r.day !== null && r.day >= from);
+  bt.jobs = keep(unpack(jobs));
+  bt.eva = keep(unpack(evaJobs));
   const all = [...bt.jobs, ...bt.eva];
   fillPeriodPickers(true);
   const lobs = [...new Set(all.map((r) => r.lobLabel))].sort();
@@ -732,11 +737,14 @@ function setBranchData(jobs, evaJobs) {
 
 // From / To for the picked view: every period from the earliest job to now (or the latest job). Defaults:
 // weekly / fortnightly = a Month picker on this month, monthly = Jan of this year → this month, yearly = every year,
-// custom = 1 Jan of this year → today. keep = keep the picked periods (same view, new data).
+// custom = 1 Jan of this year → today. keep = keep the picked periods (same view, new data). A company
+// with a since month (STSPL) lists only that month to this month, and starts every default there.
 function fillPeriodPickers(keep) {
-  const view = curPeriod(), v = PERIODS[view];
-  keep = keep && bt.pickerView === view;
+  const view = curPeriod(), v = PERIODS[view], start = sinceDate();
+  const bound = (prop, now, lo, hi) => start ? [periodKeys(start)[prop], now] : [lo, hi];
+  keep = keep && bt.pickerView === view && bt.pickerSince === ent().since;   // STSPL's range isn't carried to the others
   bt.pickerView = view;
+  bt.pickerSince = ent().since;
   ["btFrom", "btTo"].forEach((id) => $(id).classList.toggle("hidden", !!v.custom || !!v.byMonth));
   ["btFromLbl", "btToLbl"].forEach((id) => $(id).classList.toggle("hidden", !!v.byMonth));
   ["btMonth", "btMonthLbl"].forEach((id) => $(id).classList.toggle("hidden", !v.byMonth));
@@ -744,7 +752,11 @@ function fillPeriodPickers(keep) {
   ["btFromLbl", "btToLbl"].forEach((id, i) => $(id).htmlFor = v.custom ? ["btFromDay", "btToDay"][i] : ["btFrom", "btTo"][i]);
   if (v.custom) {
     const today = new Date();
-    if (!keep || !$("btFromDay").value) $("btFromDay").value = `${today.getFullYear()}-01-01`;
+    const from0 = start && start.getFullYear() === today.getFullYear() ? `${today.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`
+                                                                     : `${today.getFullYear()}-01-01`;
+    const min = start ? `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01` : "";
+    if (!keep || !$("btFromDay").value || $("btFromDay").value < min) $("btFromDay").value = from0;
+    $("btFromDay").min = min;
     if (!keep || !$("btToDay").value) {
       const p = (n) => String(n).padStart(2, "0");
       $("btToDay").value = `${today.getFullYear()}-${p(today.getMonth() + 1)}-${p(today.getDate())}`;
@@ -755,7 +767,8 @@ function fillPeriodPickers(keep) {
     const now = monthKey(new Date());
     let lo = now, hi = now;
     for (const r of [...bt.jobs, ...bt.eva]) if (r.mk !== null) { if (r.mk < lo) lo = r.mk; if (r.mk > hi) hi = r.mk; }
-    const cur = +$("btMonth").value, pick = $("btMonth").options.length && !isNaN(cur) ? cur : now;   // same month across Weekly / Fortnightly
+    [lo, hi] = bound("mk", now, lo, hi);
+    const cur = +$("btMonth").value, pick = $("btMonth").options.length && !isNaN(cur) && cur >= lo && cur <= hi ? cur : now;   // same month across Weekly / Fortnightly
     const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${PERIODS.month.full(k)}</option>`);
     $("btMonth").innerHTML = opts.join("");
     $("btMonth").value = pick;
@@ -764,9 +777,10 @@ function fillPeriodPickers(keep) {
   const now = periodKeys(new Date())[v.prop];
   let lo = now, hi = now;
   for (const r of [...bt.jobs, ...bt.eva]) { const k = r[v.prop]; if (k !== null) { if (k < lo) lo = k; if (k > hi) hi = k; } }
-  const defFrom = v.defFrom(now, lo);
+  [lo, hi] = bound(v.prop, now, lo, hi);
+  const defFrom = start ? lo : v.defFrom(now, lo);
   lo = Math.min(lo, defFrom);
-  const kept = (id, def) => { const x = +$(id).value; return keep && $(id).options.length && !isNaN(x) ? x : def; };
+  const kept = (id, def) => { const x = +$(id).value; return keep && $(id).options.length && !isNaN(x) && x >= lo && x <= hi ? x : def; };
   const from = kept("btFrom", defFrom), to = kept("btTo", now);
   const opts = []; for (let k = hi; k >= lo; k--) opts.push(`<option value="${k}">${v.label(k)}</option>`);
   $("btFrom").innerHTML = $("btTo").innerHTML = opts.join("");
