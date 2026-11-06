@@ -175,10 +175,16 @@
   table.bt { width: 100%; border-collapse: collapse; font-size: 13px; }
   .bt th { text-align: right; padding: 12px 16px; font-size: 11.5px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
            color: var(--ink-faint); border-bottom: 1px solid var(--line); white-space: nowrap; background: #FAFBFD; }
-  .bt th:first-child, .bt td:first-child { text-align: left; position: sticky; left: 0; background: inherit; min-width: 240px; }
+  /* frozen columns: Branch / Job Owner (fixed 260px) and Grand Total stay put while the period columns scroll */
+  .bt th:first-child, .bt td:first-child { text-align: left; position: sticky; left: 0; z-index: 2; background: inherit;
+                                           width: 260px; min-width: 260px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  .bt th.gt, .bt td.gt { position: sticky; left: 260px; z-index: 2; background: inherit; min-width: 120px;
+                         box-shadow: inset -1px 0 0 var(--line), 6px 0 8px -6px rgba(28,33,54,0.22); }
+  .bt th:first-child, .bt th.gt { background: #FAFBFD; }
+  .bt td.empty { position: static; width: auto; max-width: none; }
   .bt td { text-align: right; padding: 11px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .bt th .th-sub { font-size: 10.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-faint); margin-top: 2px; }
-  .bt td.gt, .bt th.gt { border-right: 1px solid var(--line); font-weight: 700; }
+  .bt td.gt, .bt th.gt { font-weight: 700; }
   .bt td.zero { color: #C5CBDA; }
   .bt td.drill { cursor: pointer; }
   .bt td.drill:hover { color: var(--accent); text-decoration: underline; }
