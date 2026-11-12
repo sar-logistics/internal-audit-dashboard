@@ -5,7 +5,8 @@
 //   POST /api/mongo  { dataset: "users" }                          -> { users }   (admin)
 //   POST /api/mongo  { dataset: "saveUser", email, name, role, active } -> { ok }  (admin; adds or updates)
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
-//   POST /api/mongo  { dataset: "checklist", company, month }       -> { rows }    (signed in; month "2026-11")
+//   POST /api/mongo  { dataset: "checklist", company, month? }      -> { rows }    (signed in; month "2026-11",
+//                                                                                   every month when left out)
 //   POST /api/mongo  { dataset: "saveChecklist", company, month, item, week, status, completedOn, remarks } -> { row }
 //                                                                                   (Admin or Strategy)
 //
@@ -186,10 +187,11 @@ async function checklist(me, body) {
   const company = String(body.company || "");
   const month = String(body.month || "");
   if (!COMPANIES.includes(company)) throw new HttpError(400, "Unknown company.");
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HttpError(400, "Month must look like 2026-11.");
+  const monthOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
+  if (!monthOk && (month || body.dataset !== "checklist")) throw new HttpError(400, "Month must look like 2026-11.");
   const col = await checklistCol();
-  const projection = { _id: 0, item: 1, week: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
-  if (body.dataset === "checklist") return { rows: await col.find({ company, month }, { projection }).toArray() };
+  const projection = { _id: 0, month: 1, item: 1, week: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
+  if (body.dataset === "checklist") return { rows: await col.find(month ? { company, month } : { company }, { projection }).toArray() };
 
   if (!["admin", "strategy"].includes(me.role)) throw new HttpError(403, "Only Admin and Strategy users can update the checklist.");
   const item = Number(body.item);
