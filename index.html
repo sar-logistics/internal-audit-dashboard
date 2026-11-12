@@ -243,9 +243,11 @@
   }
   /* Status: monthly audit checklist */
   .ck-grid th:not(:first-child):not(.gt), .ck-grid td:not(:first-child):not(.gt) { text-align: center; }
-  .ck-grid th:first-child, .ck-grid td:first-child { width: 360px; min-width: 360px; max-width: 360px; white-space: normal; }
+  .ck-grid th:first-child, .ck-grid td:first-child { width: 230px; min-width: 230px; max-width: 230px; white-space: normal;
+                                                     overflow-wrap: anywhere; text-overflow: clip; line-height: 1.35; }
+  .ck-grid tr[data-item] td:first-child { padding-left: 40px; }   /* wrapped names line up after the number */
   .ck-grid th:first-child, .ck-grid td:first-child { box-shadow: inset -1px 0 0 var(--line), 6px 0 8px -6px rgba(28,33,54,0.22); }
-  .ck-grid .ck-sr { display: inline-block; width: 26px; color: var(--ink-faint); font-weight: 600; }
+  .ck-grid .ck-sr { position: absolute; left: 14px; width: 22px; color: var(--ink-faint); font-weight: 600; }
   .ck-grid td { padding: 8px 10px; }
   .ck-st { -webkit-appearance: none; appearance: none; font: inherit; font-size: 12px; font-weight: 700; text-align: center; text-align-last: center;
            width: 74px; padding: 5px 6px; border-radius: 999px; border: 1px dashed #D5DCEA; background: #fff; color: #A9B2C6; cursor: pointer; }
@@ -1529,8 +1531,8 @@ const ckKey = (item, month) => `${item}|${month}`;
 const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
 const ckCanEdit = () => ["admin", "strategy"].includes(me && me.role);
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-const CK_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const ckLabel = (m) => `${CK_MON[Number(m.slice(5)) - 1]} '${m.slice(2, 4)}`;
+const CK_MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const ckLabel = (m) => `${CK_MON[Number(m.slice(5)) - 1]}'${m.slice(2, 4)}`;   // January'26
 const ckPoints = () => AUDIT_POINTS.filter((p) => p.sr);
 
 // Jan '26 (Apr '26 for a company that starts later) to this month
