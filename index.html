@@ -131,10 +131,13 @@
   .kpi.stripe-orange { border-top-color: #EA580C; }
   .kpi.stripe-coral { border-top-color: var(--coral); }
   .kpi .value.orange { color: #EA580C; }
+  .kpi.stripe-good { border-top-color: #1F8A4C; }
+  .kpi .value.good { color: #1F8A4C; }
   .kpi .value.coral { color: #B91C1C; }
   .kpi .delta.soft { color: var(--ink-soft); font-weight: 500; }
   .kpi-row.rep { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi-row.rep.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi-row.ck-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .kpi .label { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
   .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; font-variant-numeric: tabular-nums; }
   .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; color: var(--good); }
@@ -340,7 +343,7 @@
     #app:not(.sb-min) .sb-backdrop { display: block; position: fixed; inset: 0; background: rgba(15,23,42,.35); z-index: 30; }
     .topbar, .content { padding-left: 16px; padding-right: 16px; }
   }
-  @media (max-width: 480px) { .kpi-row, .kpi-row.rep, .kpi-row.rep.two { grid-template-columns: 1fr; } }
+  @media (max-width: 480px) { .kpi-row, .kpi-row.rep, .kpi-row.rep.two, .kpi-row.ck-kpis { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -508,6 +511,11 @@
     </div>
     <div class="content hidden" id="sysSoon"><div class="co-empty" id="sysSoonText"></div></div>
     <div class="content hidden" id="statusContent">
+      <div class="kpi-row ck-kpis">
+        <div class="kpi stripe-good"><div class="label">Done</div><div class="value good" id="ckKDone">–</div><div class="delta soft" id="ckKDoneSub">&nbsp;</div></div>
+        <div class="kpi stripe-orange"><div class="label">WIP</div><div class="value orange" id="ckKWip">–</div><div class="delta soft" id="ckKWipSub">&nbsp;</div></div>
+        <div class="kpi stripe-coral"><div class="label">Issue</div><div class="value coral" id="ckKIssue">–</div><div class="delta soft" id="ckKIssueSub">&nbsp;</div></div>
+      </div>
       <div class="panel">
         <div class="tbl-wrap"><table class="bt ck-grid"><thead id="ckHead"></thead><tbody id="ckBody"></tbody></table></div>
       </div>
@@ -1581,6 +1589,7 @@ async function loadChecklist() {
   ck.company = company;
   ck.rows = {}; ck.byLob = {};
   $("ckCount").textContent = "";
+  ["ckKDone", "ckKWip", "ckKIssue"].forEach((id) => { $(id).textContent = "–"; $(id + "Sub").innerHTML = "&nbsp;"; });
   $("ckHead").innerHTML = "";
   $("ckBody").innerHTML = `<tr><td class="empty">Loading…</td></tr>`;
   try {
@@ -1624,6 +1633,13 @@ function renderChecklist() {
   $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * months.length)} items done`
     + (ck.all && ckCanEdit() ? " · pick an LOB to update" : "");
   $("ckHead").innerHTML = `<tr><th>Audit Point</th>${months.map((m) => `<th>${ckLabel(m)}</th>`).join("")}</tr>`;
+  // KPI cards: audit point × month cells in the range with each status
+  const cells = pts.length * months.length, range = months.length ? `${ckLabel(months[0])} → ${ckLabel(months[months.length - 1])}` : "";
+  [["Done", "ckKDone"], ["WIP", "ckKWip"], ["Issue", "ckKIssue"]].forEach(([st, id]) => {
+    const n = pts.reduce((a, p) => a + months.filter((m) => ckStatus(p.sr, m) === st).length, 0);
+    $(id).textContent = fmtInt(n);
+    $(id + "Sub").textContent = `${cells ? Math.round(n / cells * 100) : 0}% of ${fmtInt(cells)} items · ${range}`;
+  });
   const tip1 = (x) => x && x.updatedAt ? `${ckNorm(x) || "—"} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}` : "";
   const tip = (item, m) => {   // All LOBs: each LOB's status on its own line
     const t = ck.all ? ckLobsOf(item, m).map((l) => `${l}: ${ckNorm((ck.byLob[ckKey(item, m)] || {})[l]) || "—"}`).join("\n")
