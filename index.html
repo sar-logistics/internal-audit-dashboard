@@ -457,6 +457,7 @@
       <div class="filters hidden" id="ckFilters">
         <label for="ckFrom">From</label><select class="select" id="ckFrom"></select>
         <label for="ckTo">To</label><select class="select" id="ckTo"></select>
+        <select class="select" id="ckLob" aria-label="Line of business"><option value="">All LOBs</option></select>
       </div>
       <div class="topbar-actions">
         <span class="count ck-count hidden" id="ckCount"></span>
@@ -1560,16 +1561,37 @@ function openChecklist() {
   loadChecklist();
 }
 
+// LOBs of a company as the reports list them, from its job data (loaded here when its tab wasn't opened yet)
+async function ckLobs(co) {
+  if (!ENTITIES[co]) return [];
+  if (!loaded[co]) loaded[co] = await api("/api/mongo-batch", { dataset: ENTITIES[co].dataset });
+  const lobs = new Set();
+  [loaded[co].jobs, loaded[co].evaJobs].forEach((set) => {
+    const f = set?.fields || [], li = f.indexOf("lob"), di = f.indexOf("direction");
+    (set?.rows || []).forEach((a) => lobs.add(lobLabel(a[li], a[di])));
+  });
+  return [...lobs].sort();
+}
+
+// Each LOB keeps its own statuses; "All LOBs" is the company-wide checklist
 async function loadChecklist() {
   fillCkMonths();
-  const company = ck.company = ckCompany();
+  const company = ckCompany(), newCo = ck.company !== company;
+  ck.company = company;
   ck.rows = {};
   $("ckCount").textContent = "";
   $("ckHead").innerHTML = "";
   $("ckBody").innerHTML = `<tr><td class="empty">Loading…</td></tr>`;
   try {
-    const r = await api("/api/mongo", { dataset: "checklist", company });
-    if (company !== ckCompany()) return;   // the user moved on meanwhile
+    if (newCo) {
+      $("ckLob").innerHTML = `<option value="">All LOBs</option>`;
+      const lobs = await ckLobs(company).catch((e) => { console.warn("LOBs:", e.message); return []; });   // the checklist still works without them
+      if (company !== ckCompany()) return;
+      $("ckLob").innerHTML += lobs.map((l) => `<option>${esc(l)}</option>`).join("");
+    }
+    const lob = $("ckLob").value;
+    const r = await api("/api/mongo", { dataset: "checklist", company, lob });
+    if (company !== ckCompany() || lob !== $("ckLob").value) return;   // the user moved on meanwhile
     (r.rows || []).filter((x) => !x.week).forEach((x) => { ck.rows[ckKey(x.item, x.month)] = x; });
     renderChecklist();
   } catch (e) {
@@ -1601,14 +1623,14 @@ function renderChecklist() {
 $("ckBody").addEventListener("change", async (e) => {
   const td = e.target.closest("td[data-month]"), tr = e.target.closest("tr[data-item]");
   if (!td || !tr || !ckCanEdit()) return;
-  const company = ckCompany(), month = td.dataset.month, item = Number(tr.dataset.item), st = e.target.value;
+  const company = ckCompany(), lob = $("ckLob").value, month = td.dataset.month, item = Number(tr.dataset.item), st = e.target.value;
   const old = ck.rows[ckKey(item, month)] || {}, was = ckStatus(item, month);
   e.target.dataset.st = st;
   td.classList.add("saving"); td.classList.remove("ck-err");
   try {
-    const r = await api("/api/mongo", { dataset: "saveChecklist", company, month, item, status: st || "Pending",
+    const r = await api("/api/mongo", { dataset: "saveChecklist", company, lob, month, item, status: st || "Pending",
       completedOn: st === "Done" ? (was === "Done" && old.completedOn) || ymd(new Date()) : "", remarks: old.remarks || "" });
-    if (company !== ckCompany()) return;
+    if (company !== ckCompany() || lob !== $("ckLob").value) return;
     ck.rows[ckKey(item, month)] = { ...r.row, month };
     renderChecklist();
   } catch (err) {
@@ -1618,6 +1640,7 @@ $("ckBody").addEventListener("change", async (e) => {
   }
 });
 $("ckFrom").onchange = $("ckTo").onchange = renderChecklist;
+$("ckLob").onchange = loadChecklist;
 
 // Most recent sign-in first; users who never signed in go last
 function renderUsage() {

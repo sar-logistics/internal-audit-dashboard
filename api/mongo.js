@@ -5,13 +5,14 @@
 //   POST /api/mongo  { dataset: "users" }                          -> { users }   (admin)
 //   POST /api/mongo  { dataset: "saveUser", email, name, role, active } -> { ok }  (admin; adds or updates)
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
-//   POST /api/mongo  { dataset: "checklist", company, month? }      -> { rows }    (signed in; month "2026-11",
+//   POST /api/mongo  { dataset: "checklist", company, lob, month? } -> { rows }    (signed in; month "2026-11",
 //                                                                                   every month when left out)
-//   POST /api/mongo  { dataset: "saveChecklist", company, month, item, week, status, completedOn, remarks } -> { row }
+//   POST /api/mongo  { dataset: "saveChecklist", company, lob, month, item, week, status, completedOn, remarks } -> { row }
 //                                                                                   (Admin or Strategy)
 //
 // Audit checklist: collection "checklist" of sar-internal-audit, one document per company, month and
-// audit point { company, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. week is 0
+// audit point { company, lob, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. lob is ""
+// for the company-wide checklist (All LOBs), else an LOB name as the reports show it (e.g. "Sea Export"). week is 0
 // for monthly points; weekly points (26 AS reconciliation) keep one document per week of the month, 1–6.
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
@@ -188,11 +189,13 @@ async function checklist(me, body) {
   const company = String(body.company || "");
   const month = String(body.month || "");
   if (!COMPANIES.includes(company)) throw new HttpError(400, "Unknown company.");
+  const lob = String(body.lob || "").trim().slice(0, 60);
+  const lobQuery = lob || { $in: ["", null] };   // entries saved before LOBs existed are company-wide
   const monthOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
   if (!monthOk && (month || body.dataset !== "checklist")) throw new HttpError(400, "Month must look like 2026-11.");
   const col = await checklistCol();
-  const projection = { _id: 0, month: 1, item: 1, week: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
-  if (body.dataset === "checklist") return { rows: await col.find(month ? { company, month } : { company }, { projection }).toArray() };
+  const projection = { _id: 0, lob: 1, month: 1, item: 1, week: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
+  if (body.dataset === "checklist") return { rows: await col.find(month ? { company, lob: lobQuery, month } : { company, lob: lobQuery }, { projection }).toArray() };
 
   if (!["admin", "strategy"].includes(me.role)) throw new HttpError(403, "Only Admin and Strategy users can update the checklist.");
   const item = Number(body.item);
@@ -203,7 +206,7 @@ async function checklist(me, body) {
   const completedOn = /^\d{4}-\d{2}-\d{2}$/.test(String(body.completedOn || "")) ? body.completedOn : "";
   const remarks = String(body.remarks || "").trim().slice(0, 1000);
   const row = { item, week, status, completedOn, remarks, updatedBy: me.email, updatedAt: new Date() };
-  await col.updateOne({ company, month, item, week: week || { $in: [0, null] } }, { $set: { company, month, ...row } }, { upsert: true });
+  await col.updateOne({ company, lob: lobQuery, month, item, week: week || { $in: [0, null] } }, { $set: { company, lob, month, ...row } }, { upsert: true });
   return { row };
 }
 
