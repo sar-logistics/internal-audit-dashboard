@@ -6,11 +6,12 @@
 //   POST /api/mongo  { dataset: "saveUser", email, name, role, active } -> { ok }  (admin; adds or updates)
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
 //   POST /api/mongo  { dataset: "checklist", company, month }       -> { rows }    (signed in; month "2026-11")
-//   POST /api/mongo  { dataset: "saveChecklist", company, month, item, status, completedOn, remarks } -> { row }
+//   POST /api/mongo  { dataset: "saveChecklist", company, month, item, week, status, completedOn, remarks } -> { row }
 //                                                                                   (Admin or Strategy)
 //
 // Audit checklist: collection "checklist" of sar-internal-audit, one document per company, month and
-// audit point { company, month, item, status, completedOn, remarks, updatedBy, updatedAt }.
+// audit point { company, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. week is 0
+// for monthly points; weekly points (26 AS reconciliation) keep one document per week of the month, 1–6.
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
 // per person { email, name, role: "Admin" | "Strategy" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
@@ -187,17 +188,19 @@ async function checklist(me, body) {
   if (!COMPANIES.includes(company)) throw new HttpError(400, "Unknown company.");
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HttpError(400, "Month must look like 2026-11.");
   const col = await checklistCol();
-  const projection = { _id: 0, item: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
+  const projection = { _id: 0, item: 1, week: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
   if (body.dataset === "checklist") return { rows: await col.find({ company, month }, { projection }).toArray() };
 
   if (!["admin", "strategy"].includes(me.role)) throw new HttpError(403, "Only Admin and Strategy users can update the checklist.");
   const item = Number(body.item);
   if (!Number.isInteger(item) || item < 1 || item > 500) throw new HttpError(400, "Unknown audit point.");
+  const week = Number(body.week) || 0;
+  if (!Number.isInteger(week) || week < 0 || week > 6) throw new HttpError(400, "Unknown week.");
   const status = CHECK_STATUSES.includes(body.status) ? body.status : "Pending";
   const completedOn = /^\d{4}-\d{2}-\d{2}$/.test(String(body.completedOn || "")) ? body.completedOn : "";
   const remarks = String(body.remarks || "").trim().slice(0, 1000);
-  const row = { item, status, completedOn, remarks, updatedBy: me.email, updatedAt: new Date() };
-  await col.updateOne({ company, month, item }, { $set: { company, month, ...row } }, { upsert: true });
+  const row = { item, week, status, completedOn, remarks, updatedBy: me.email, updatedAt: new Date() };
+  await col.updateOne({ company, month, item, week: week || { $in: [0, null] } }, { $set: { company, month, ...row } }, { upsert: true });
   return { row };
 }
 

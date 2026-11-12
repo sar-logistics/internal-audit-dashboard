@@ -252,6 +252,11 @@
   .ck-tbl input[type=text] { width: 100%; min-width: 180px; font: inherit; font-size: 13px; border: 1px solid #D5DCEA; border-radius: 8px; padding: 7px 10px; }
   .ck-tbl input:disabled, .ck-tbl select:disabled { cursor: default; opacity: .7; background: #F6F8FC; }
   .ck-tbl .muted { color: var(--ink-faint); font-size: 12px; white-space: nowrap; }
+  .ck-tbl .ck-week td:nth-child(2) { padding-left: 30px; color: var(--ink-soft); font-size: 13px; }
+  .ck-tbl .ck-week td { border-top-color: #F1F4FA; }
+  .ck-wk { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #F1F4FA; color: var(--ink-soft); }
+  .ck-wk[data-st="Completed"] { background: #E1F5EA; color: #1F8A4C; }
+  .ck-wk[data-st="In Progress"] { background: #FFF4DE; color: #A86200; }
   .ck-sum { display: flex; gap: 8px; flex-wrap: wrap; }
   .ck-sum span { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #F1F4FA; color: var(--ink-soft); }
   .ck-sum .done { background: #E1F5EA; color: #1F8A4C; }
@@ -1502,7 +1507,7 @@ function renderUsers() {
 
 // ============================================================ Status: monthly audit checklist
 // Audit points marked "Checklist vs Metric = Yes" in the audit sheet. Section A's other points and
-// section C are still to be added.
+// section C are still to be added. Weekly points get one row per week of the month (Mon–Sun, cut at the month's ends).
 const AUDIT_POINTS = [
   { sec: "A." },
   { sr: 8, name: "BL Updation & Release" },
@@ -1511,7 +1516,7 @@ const AUDIT_POINTS = [
   { sr: 10, name: "GST Reconciliation" },
   { sr: 11, name: "Bank Reco." },
   { sr: 12, name: "TDS Reconciliation (Vendors)" },
-  { sr: 13, name: "26 AS reconciliation" },
+  { sr: 13, name: "26 AS reconciliation", weekly: true },
   { sr: 14, name: "Payroll Reco." },
   { sr: 16, name: "Depreciation" },
   { sr: 18, name: "Prepaid Accounting" },
@@ -1525,7 +1530,33 @@ const AUDIT_POINTS = [
   { sr: 32, name: "Worldwide tracker to track all taxation / legal notices (Taxation, HR)" },
 ];
 const CK_STATUSES = ["Pending", "In Progress", "Completed", "Not Applicable"];
-const ck = { rows: {} };   // item -> saved row of the company and month shown
+const ck = { rows: {} };   // "item-week" -> saved row of the company and month shown (week 0 = monthly)
+const ckKey = (item, week) => `${item}-${week || 0}`;
+
+// Mon–Sun weeks of a "2026-11" month, cut at the month's ends; a first or last piece of 3 days or
+// fewer joins the week next to it, so a month has 4 or 5 weeks
+function ckWeeks(month) {
+  const [y, m] = month.split("-").map(Number), last = new Date(y, m, 0).getDate(), spans = [];
+  const mon = new Date(y, m - 1, 1).toLocaleString("en-GB", { month: "short" });
+  for (let start = 1; start <= last;) {
+    const end = Math.min(last, start + 6 - (new Date(y, m - 1, start).getDay() + 6) % 7);
+    spans.push([start, end]);
+    start = end + 1;
+  }
+  if (spans[0][1] - spans[0][0] < 3) { const [f] = spans.splice(0, 1); spans[0][0] = f[0]; }
+  const z = spans.length - 1;
+  if (spans[z][1] - spans[z][0] < 3) { const [l] = spans.splice(z, 1); spans[z - 1][1] = l[1]; }
+  return spans.map(([a, b], i) => ({ week: i + 1, label: `Week ${i + 1} · ${a}–${b} ${mon}` }));
+}
+
+// A point's status for the month: a weekly point is Completed once every week is Completed or Not Applicable
+function ckStatus(p) {
+  if (!p.weekly) return (ck.rows[ckKey(p.sr)] || {}).status || "Pending";
+  const sts = ckWeeks($("ckMonth").value).map((w) => (ck.rows[ckKey(p.sr, w.week)] || {}).status || "Pending");
+  if (sts.every((v) => v === "Not Applicable")) return "Not Applicable";
+  if (sts.every((v) => v === "Completed" || v === "Not Applicable")) return "Completed";
+  return sts.some((v) => v !== "Pending") ? "In Progress" : "Pending";
+}
 const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
 const ckCanEdit = () => ["admin", "strategy"].includes(me && me.role);
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1556,7 +1587,7 @@ async function loadChecklist() {
   try {
     const r = await api("/api/mongo", { dataset: "checklist", company, month });
     if (company !== ckCompany() || month !== $("ckMonth").value) return;   // the user moved on meanwhile
-    (r.rows || []).forEach((x) => { ck.rows[x.item] = x; });
+    (r.rows || []).forEach((x) => { ck.rows[ckKey(x.item, x.week)] = x; });
     renderChecklist();
   } catch (e) {
     if (!["signed out", "no access"].includes(e.message)) $("ckBody").innerHTML = `<tr><td class="empty" colspan="6">${esc(e.message)}</td></tr>`;
@@ -1567,26 +1598,40 @@ const ckUpdated = (x) => x && x.updatedAt ? `${fmtSignIn(x.updatedAt)}<br>${esc(
 
 function renderCkSummary() {
   const pts = AUDIT_POINTS.filter((p) => p.sr);
-  const count = (st) => pts.filter((p) => ((ck.rows[p.sr] || {}).status || "Pending") === st).length;
+  const count = (st) => pts.filter((p) => ckStatus(p) === st).length;
   const done = count("Completed"), na = count("Not Applicable"), due = pts.length - na;
   $("ckSum").innerHTML = `<span class="done">${done} of ${due} completed${due ? ` (${Math.round(done / due * 100)}%)` : ""}</span>`
     + `<span class="prog">${count("In Progress")} in progress</span><span>${count("Pending")} pending</span>`
     + (na ? `<span>${na} not applicable</span>` : "");
 }
 
+// "3 of 5 weeks completed" on a weekly point's own row
+function ckWeeklyText(p) {
+  const weeks = ckWeeks($("ckMonth").value);
+  const done = weeks.filter((w) => ["Completed", "Not Applicable"].includes((ck.rows[ckKey(p.sr, w.week)] || {}).status)).length;
+  return `<span class="ck-wk" data-st="${ckStatus(p)}">${done} of ${weeks.length} weeks completed</span>`;
+}
+
 function renderChecklist() {
-  const dis = ckCanEdit() ? "" : "disabled";
   $("ckBody").innerHTML = AUDIT_POINTS.map((p) => {
     if (p.sec) return `<tr class="ck-sec"><td colspan="6">${esc(p.sec)}</td></tr>`;
-    const x = ck.rows[p.sr] || {}, st = x.status || "Pending";
-    return `<tr data-item="${p.sr}">
-      <td class="ck-sr">${p.sr}</td><td>${esc(p.name)}</td>
+    if (!p.weekly) return ckRow(p.sr, 0, p.sr, esc(p.name));
+    return `<tr class="ck-weekly"><td class="ck-sr">${p.sr}</td><td>${esc(p.name)} <span class="muted">(weekly)</span></td>
+      <td colspan="4" data-weekly="${p.sr}">${ckWeeklyText(p)}</td></tr>`
+      + ckWeeks($("ckMonth").value).map((w) => ckRow(p.sr, w.week, "", esc(w.label), "ck-week")).join("");
+  }).join("");
+  renderCkSummary();
+}
+
+function ckRow(item, week, sr, name, cls = "") {
+  const dis = ckCanEdit() ? "" : "disabled";
+  const x = ck.rows[ckKey(item, week)] || {}, st = x.status || "Pending";
+  return `<tr data-item="${item}" data-week="${week}" class="${cls}">
+      <td class="ck-sr">${sr}</td><td>${name}</td>
       <td><select data-f="status" data-st="${st}" ${dis}>${CK_STATUSES.map((v) => `<option${v === st ? " selected" : ""}>${v}</option>`).join("")}</select></td>
       <td><input type="date" class="date-in" data-f="completedOn" value="${esc(x.completedOn || "")}" ${dis} aria-label="Completed on"></td>
       <td><input type="text" data-f="remarks" value="${esc(x.remarks || "")}" maxlength="1000" placeholder="${dis ? "" : "Add remarks…"}" ${dis} aria-label="Remarks"></td>
-      <td class="muted" data-f="updated">${ckUpdated(ck.rows[p.sr])}</td></tr>`;
-  }).join("");
-  renderCkSummary();
+      <td class="muted" data-f="updated">${ckUpdated(ck.rows[ckKey(item, week)])}</td></tr>`;
 }
 
 // Each change saves that audit point's row
@@ -1602,10 +1647,12 @@ $("ckBody").addEventListener("change", async (e) => {
   f("updated").textContent = "Saving…";
   try {
     const r = await api("/api/mongo", { dataset: "saveChecklist", company, month, item: Number(tr.dataset.item),
-      status: f("status").value, completedOn: f("completedOn").value, remarks: f("remarks").value });
+      week: Number(tr.dataset.week) || 0, status: f("status").value, completedOn: f("completedOn").value, remarks: f("remarks").value });
     if (company !== ckCompany() || month !== $("ckMonth").value) return;
-    ck.rows[r.row.item] = r.row;
+    ck.rows[ckKey(r.row.item, r.row.week)] = r.row;
     f("updated").innerHTML = ckUpdated(r.row);
+    const p = AUDIT_POINTS.find((q) => q.sr === r.row.item), wk = $("ckBody").querySelector(`[data-weekly="${r.row.item}"]`);
+    if (p && wk) wk.innerHTML = ckWeeklyText(p);
     renderCkSummary();
   } catch (err) {
     if (!["signed out", "no access"].includes(err.message)) f("updated").innerHTML = `<span style="color:var(--coral)">${esc(err.message)}</span>`;
