@@ -59,6 +59,7 @@
   #app.sb-min .data-row, #app.sb-min .account b { display: none; }
   #app.sb-min .nav { padding: 12px 10px; }
   #app.sb-min .nav-item { justify-content: center; padding: 11px 0; }
+  #app.sb-min .nav-sys.collapsed .nav-item { display: flex; }   /* icons stay reachable when the menu is narrow */
   #app.sb-min .nav-group { display: block; font-size: 0; padding: 0; margin: 8px 4px; }   /* divider only */
   #app.sb-min .nav-item.active::before { left: -10px; }
   #app.sb-min .sidebar-foot { padding: 14px 0 18px; display: flex; justify-content: center; }
@@ -210,6 +211,11 @@
   .kpi-click { cursor: pointer; transition: box-shadow .15s ease, border-color .15s ease; }
   .kpi-click:hover, .kpi-click:focus-visible { box-shadow: 0 4px 16px rgba(15,42,77,0.12); border-color: var(--accent); outline: none; }
   .nav-group { margin-top: 10px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .nav-toggle { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; cursor: pointer; font-family: inherit; text-align: left; }
+  .nav-toggle:hover { color: #fff; }
+  .nav-toggle svg { transition: transform .15s ease; }
+  .nav-sys.collapsed .nav-toggle svg { transform: rotate(-90deg); }
+  .nav-sys.collapsed .nav-item:not(.active) { display: none; }
   .nav-sys { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
   @media (max-height: 760px) {   /* laptop screens: tighter menu so every report shows without scrolling */
     .brand { padding: 14px 18px 12px 22px; min-height: 56px; }
@@ -355,10 +361,24 @@
       </div>
     </nav>
     <nav class="nav nav-sys hidden" id="sysNav">
-      <div class="nav-label">System</div>
+      <button type="button" class="nav-label nav-toggle" id="sysToggle" aria-expanded="true">System
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
+      </button>
+      <div class="nav-item" data-sys="usage" title="Usage Analytics">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 14h12M3.5 14V9h2.5v5M6.75 14V5.5h2.5V14M10 14V2.5h2.5V14"/></svg>
+        <span>Usage Analytics</span>
+      </div>
+      <div class="nav-item" data-sys="teams" title="Teams">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="5" r="2.5"/><path d="M1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M10.5 2.8a2.5 2.5 0 0 1 0 4.4M12 9.8c1.5.6 2.5 2.2 2.5 4.2"/></svg>
+        <span>Teams</span>
+      </div>
       <div class="nav-item" id="navAdmin" title="Admin Panel">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.5 2.5 3.5v4c0 3.2 2.3 5.9 5.5 7 3.2-1.1 5.5-3.8 5.5-7v-4z"/><rect x="5.5" y="7" width="5" height="4" rx="1"/><path d="M6.5 7V5.8a1.5 1.5 0 0 1 3 0V7"/></svg>
         <span>Admin Panel</span>
+      </div>
+      <div class="nav-item" data-sys="tickets" title="Tickets">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M14 7.5c0 3-2.7 5.5-6 5.5-.9 0-1.8-.2-2.6-.5L2 13.5l1-3A5.3 5.3 0 0 1 2 7.5C2 4.5 4.7 2 8 2s6 2.5 6 5.5z"/></svg>
+        <span>Tickets</span>
       </div>
     </nav>
     <div class="sidebar-foot">
@@ -442,6 +462,7 @@
         <div class="tbl-wrap"><table class="bt"><thead id="btHead"></thead><tbody id="btBody"></tbody></table></div>
       </div>
     </div>
+    <div class="content hidden" id="sysSoon"><div class="co-empty" id="sysSoonText"></div></div>
     <div class="content hidden" id="adminContent">
       <div class="panel">
         <div class="panel-head">
@@ -1340,10 +1361,17 @@ const adm = { users: [], breakGlass: [] };
 const ROLE_NAMES = ["Viewer", "Strategy", "Admin"];   // Strategy sees the same data as Viewer for now
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
+// "usage" / "teams" / "tickets" are System pages still to be built: they show a coming-soon note.
+const SYS_PAGES = { usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
 function showView(view) {
-  const admin = view === "admin";
-  $("adminContent").classList.toggle("hidden", !admin);
-  $("navAdmin").classList.toggle("active", admin);
+  const soon = !!SYS_PAGES[view];
+  const admin = view === "admin" || soon;   // every System page hides the company tabs and filters
+  $("adminContent").classList.toggle("hidden", view !== "admin");
+  $("sysSoon").classList.toggle("hidden", !soon);
+  if (soon) $("sysSoonText").textContent = `${SYS_PAGES[view]} is coming soon.`;
+  $("pageTitle").textContent = SYS_PAGES[view] || "Admin Panel";
+  $("navAdmin").classList.toggle("active", view === "admin");
+  document.querySelectorAll("#sysNav [data-sys]").forEach((x) => x.classList.toggle("active", x.dataset.sys === view));
   $("companyTabs").classList.toggle("hidden", admin);
   document.querySelectorAll("#btReports [data-report]").forEach((x) => x.classList.toggle("active", !admin && x.dataset.report === bt.report));
   const co = admin ? null : document.querySelector("#companyTabs button.on")?.dataset.co || company;
@@ -1406,6 +1434,8 @@ async function saveUser(u, done) {
 }
 
 $("navAdmin").onclick = openAdmin;
+$("sysNav").addEventListener("click", (e) => { const b = e.target.closest("[data-sys]"); if (b) { closeKpi(); showView(b.dataset.sys); } });
+$("sysToggle").onclick = () => { const c = $("sysNav").classList.toggle("collapsed"); $("sysToggle").setAttribute("aria-expanded", String(!c)); };
 $("admSearch").oninput = renderUsers;
 $("admAdd").onsubmit = async (e) => {
   e.preventDefault();
