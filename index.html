@@ -249,6 +249,7 @@
   .ck-grid th:first-child, .ck-grid td:first-child { box-shadow: inset -1px 0 0 var(--line), 6px 0 8px -6px rgba(28,33,54,0.22); }
   .ck-grid .ck-sr { position: absolute; left: 14px; width: 22px; color: var(--ink-faint); font-weight: 600; }
   .ck-grid td { padding: 8px 12px; }
+  .ck-count { font-size: 13px; color: var(--ink-faint); font-weight: 600; }
   .ck-grid th:not(:first-child), .ck-grid td:not(:first-child) { border-left: 1px solid var(--line); }   /* a line between months */
   .ck-st { -webkit-appearance: none; appearance: none; font: inherit; font-size: 14px; font-weight: 700; text-align: center; text-align-last: center;
            width: 124px; min-height: 38px; padding: 8px 12px; border-radius: 999px; border: 1px dashed #D5DCEA; background: #fff; color: #A9B2C6; cursor: pointer; }
@@ -453,7 +454,12 @@
         <span class="fx" id="btCurWrap"><select class="select" id="btCur" aria-label="Currency"><option>USD</option><option id="btCurLocal">CAD</option></select></span>
         <span class="fx" id="btFx">1 USD = <input id="btRate" type="number" min="0.01" step="0.01" value="1.40" aria-label="Exchange rate"> <span id="btRateCur">CAD</span></span>
       </div>
+      <div class="filters hidden" id="ckFilters">
+        <label for="ckFrom">From</label><select class="select" id="ckFrom"></select>
+        <label for="ckTo">To</label><select class="select" id="ckTo"></select>
+      </div>
       <div class="topbar-actions">
+        <span class="count ck-count hidden" id="ckCount"></span>
         <button class="btn-refresh" id="caRefresh" type="button">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 8V3.5M13.5 8H9"/></svg>
           Refresh data
@@ -502,12 +508,6 @@
     <div class="content hidden" id="sysSoon"><div class="co-empty" id="sysSoonText"></div></div>
     <div class="content hidden" id="statusContent">
       <div class="panel">
-        <div class="panel-head">
-          <h2>Audit Checklist — Monthly</h2>
-          <div class="filters"><label>From</label><select class="select" id="ckFrom" aria-label="From month"></select>
-            <label>To</label><select class="select" id="ckTo" aria-label="To month"></select></div>
-          <span class="count" id="ckCount"></span>
-        </div>
         <div class="tbl-wrap"><table class="bt ck-grid"><thead id="ckHead"></thead><tbody id="ckBody"></tbody></table></div>
       </div>
     </div>
@@ -1438,7 +1438,7 @@ const ROLE_NAMES = ["Viewer", "Strategy", "Admin"];   // Strategy sees the same 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
 // "status" is the monthly audit checklist of the selected company; "usage" shows sign-in counts per user;
 // "teams" / "tickets" are still to be built and show a coming-soon note.
-const SYS_PAGES = { status: "Status", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
+const SYS_PAGES = { status: "Audit Checklist — Monthly", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
 const SOON_PAGES = ["teams", "tickets"];
 let currentView = "data";
 function showView(view) {
@@ -1447,6 +1447,8 @@ function showView(view) {
   const admin = view === "admin" || !!SYS_PAGES[view];   // every System page hides the company tabs and filters
   $("adminContent").classList.toggle("hidden", view !== "admin");
   $("statusContent").classList.toggle("hidden", view !== "status");
+  $("ckFilters").classList.toggle("hidden", view !== "status");
+  $("ckCount").classList.toggle("hidden", view !== "status");
   $("usageContent").classList.toggle("hidden", view !== "usage");
   $("sysSoon").classList.toggle("hidden", !soon);
   if (soon) $("sysSoonText").textContent = `${SYS_PAGES[view]} is coming soon.`;
