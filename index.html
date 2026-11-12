@@ -731,6 +731,7 @@ const REPORTS = {
   cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => !!r.costFlag, amtKey: "unpostedCost" },
   fin:   { title: "Finance Pendency",   pool: "jobs", flag: (r) => !!r.finPending,                     count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} pending` },
 };
+let lobPick = "";   // the LOB picked on any report or on Status; every page uses it when that company has the LOB
 const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
 
 function parseDay(v) {
@@ -828,9 +829,8 @@ function setBranchData(jobs, evaJobs) {
   const all = [...bt.jobs, ...bt.eva];
   fillPeriodPickers(true);
   const lobs = [...new Set(all.map((r) => r.lobLabel))].sort();
-  const lob = $("btLob").value;
   $("btLob").innerHTML = `<option value="">All LOBs</option>` + lobs.map((l) => `<option>${l}</option>`).join("");
-  $("btLob").value = lobs.includes(lob) ? lob : "";
+  $("btLob").value = lobs.includes(lobPick) ? lobPick : "";
   renderBranchTable();
 }
 
@@ -1039,7 +1039,8 @@ $("btReports").onclick = (e) => {
   else if (e.target.closest("[data-sys=status]")) openChecklist();
 };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
-["btMonth", "btFrom", "btTo", "btFromDay", "btToDay", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
+["btMonth", "btFrom", "btTo", "btFromDay", "btToDay"].forEach((id) => { $(id).onchange = renderBranchTable; });
+$("btLob").onchange = () => { lobPick = $("btLob").value; renderBranchTable(); };
 $("btView").onchange = () => { fillPeriodPickers(false); renderBranchTable(); };
 const showRate = () => { const r = rateOf(ent().source); $("btRate").value = r >= 100 ? String(Math.round(r)) : r.toFixed(2); };
 function redrawMoney() {
@@ -1424,7 +1425,6 @@ $("companyTabs").onclick = (e) => {
   $("coEmptyText").textContent = `${co} isn't connected to the audit dashboard yet.`;
   if (!connected || co === company) return;
   company = co;
-  $("btLob").value = "";
   bt.open.clear();
   closeKpi();
   redrawMoney();
@@ -1591,6 +1591,7 @@ async function loadChecklist() {
       $("ckLob").innerHTML += lobs.map((l) => `<option>${esc(l)}</option>`).join("");
       ck.lobs = lobs;
     }
+    $("ckLob").value = [...$("ckLob").options].some((o) => o.value === lobPick) ? lobPick : "";
     const lob = $("ckLob").value;
     const r = await api("/api/mongo", { dataset: "checklist", company, lob: lob || "*" });
     if (company !== ckCompany() || lob !== $("ckLob").value) return;   // the user moved on meanwhile
@@ -1660,7 +1661,11 @@ $("ckBody").addEventListener("change", async (e) => {
   }
 });
 $("ckFrom").onchange = $("ckTo").onchange = renderChecklist;
-$("ckLob").onchange = loadChecklist;
+$("ckLob").onchange = () => {
+  lobPick = $("ckLob").value;
+  if ([...$("btLob").options].some((o) => o.value === lobPick)) $("btLob").value = lobPick;   // the reports follow on return
+  loadChecklist();
+};
 
 // Most recent sign-in first; users who never signed in go last
 function renderUsage() {
