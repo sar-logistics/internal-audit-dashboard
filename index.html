@@ -1468,7 +1468,7 @@ function showView(view) {
   document.querySelectorAll("#btReports [data-report]").forEach((x) => x.classList.toggle("active", !admin && x.dataset.report === bt.report));
   const co = admin ? null : document.querySelector("#companyTabs button.on")?.dataset.co || company;
   const connected = !admin && !!ENTITIES[co];
-  $("pageTitle").classList.toggle("hidden", !admin);   // company views show only the filters; the tab names the company
+  $("pageTitle").classList.toggle("hidden", !admin || view === "status");   // Status shows only its filters   // company views show only the filters; the tab names the company
   $("canadaContent").classList.toggle("hidden", !connected);
   $("coEmpty").classList.toggle("hidden", admin || connected);
   $("btFilters").classList.toggle("hidden", !connected);
