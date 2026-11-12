@@ -1610,11 +1610,11 @@ function ckWeeklyText(p) {
   return `<span class="ck-wk" data-st="${ckStatus(p)}">${done} of ${weeks.length} weeks completed</span>`;
 }
 
+// Rows are numbered 1, 2, 3…; saved rows keep the audit sheet's Sr No (p.sr) as their key
 function renderChecklist() {
-  $("ckBody").innerHTML = AUDIT_POINTS.map((p) => {
-    if (p.sec) return `<tr class="ck-sec"><td colspan="6">${esc(p.sec)}</td></tr>`;
-    if (!p.weekly) return ckRow(p.sr, 0, p.sr, esc(p.name));
-    return `<tr class="ck-weekly"><td class="ck-sr">${p.sr}</td><td>${esc(p.name)} <span class="muted">(weekly)</span></td>
+  $("ckBody").innerHTML = AUDIT_POINTS.filter((p) => p.sr).map((p, i) => {
+    if (!p.weekly) return ckRow(p.sr, 0, i + 1, esc(p.name));
+    return `<tr class="ck-weekly"><td class="ck-sr">${i + 1}</td><td>${esc(p.name)} <span class="muted">(weekly)</span></td>
       <td colspan="4" data-weekly="${p.sr}">${ckWeeklyText(p)}</td></tr>`
       + ckWeeks($("ckMonth").value).map((w) => ckRow(p.sr, w.week, "", esc(w.label), "ck-week")).join("");
   }).join("");
