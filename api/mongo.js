@@ -5,6 +5,12 @@
 //   POST /api/mongo  { dataset: "users" }                          -> { users }   (admin)
 //   POST /api/mongo  { dataset: "saveUser", email, name, role, active } -> { ok }  (admin; adds or updates)
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
+//   POST /api/mongo  { dataset: "checklist", company, month }       -> { rows }    (signed in; month "2026-11")
+//   POST /api/mongo  { dataset: "saveChecklist", company, month, item, status, completedOn, remarks } -> { row }
+//                                                                                   (Admin or Strategy)
+//
+// Audit checklist: collection "checklist" of sar-internal-audit, one document per company, month and
+// audit point { company, month, item, status, completedOn, remarks, updatedBy, updatedAt }.
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
 // per person { email, name, role: "Admin" | "Strategy" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
@@ -170,6 +176,31 @@ async function manageUsers(me, body) {
   return { ok: true };
 }
 
+// ============================================================ audit checklist
+const CHECK_STATUSES = ["Pending", "In Progress", "Completed", "Not Applicable"];
+const COMPANIES = ["STSPL", "SAR USA", "SAR Canada", "SAR Thailand", "SAR Indonesia"];   // the company tab names
+const checklistCol = async () => (await connectDb(["AUDIT_URI"], AUDIT_DB)).collection("checklist");
+
+async function checklist(me, body) {
+  const company = String(body.company || "");
+  const month = String(body.month || "");
+  if (!COMPANIES.includes(company)) throw new HttpError(400, "Unknown company.");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HttpError(400, "Month must look like 2026-11.");
+  const col = await checklistCol();
+  const projection = { _id: 0, item: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
+  if (body.dataset === "checklist") return { rows: await col.find({ company, month }, { projection }).toArray() };
+
+  if (!["admin", "strategy"].includes(me.role)) throw new HttpError(403, "Only Admin and Strategy users can update the checklist.");
+  const item = Number(body.item);
+  if (!Number.isInteger(item) || item < 1 || item > 500) throw new HttpError(400, "Unknown audit point.");
+  const status = CHECK_STATUSES.includes(body.status) ? body.status : "Pending";
+  const completedOn = /^\d{4}-\d{2}-\d{2}$/.test(String(body.completedOn || "")) ? body.completedOn : "";
+  const remarks = String(body.remarks || "").trim().slice(0, 1000);
+  const row = { item, status, completedOn, remarks, updatedBy: me.email, updatedAt: new Date() };
+  await col.updateOne({ company, month, item }, { $set: { company, month, ...row } }, { upsert: true });
+  return { row };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method === "GET" && req.query && req.query.config) return res.status(200).json({ googleClientId: GOOGLE_CLIENT_ID });
@@ -188,6 +219,10 @@ export default async function handler(req, res) {
       if (me.role !== "admin") throw new HttpError(403, "Only an Admin can manage users.");
       if (!process.env.AUDIT_URI) throw new HttpError(500, "AUDIT_URI is not set: the user list needs it.");
       return res.status(200).json(await manageUsers(me, body));
+    }
+    if (["checklist", "saveChecklist"].includes(body.dataset)) {
+      if (!process.env.AUDIT_URI) throw new HttpError(500, "AUDIT_URI is not set: the checklist needs it.");
+      return res.status(200).json(await checklist(me, body));
     }
     throw new HttpError(400, "Unknown request");
   } catch (err) {

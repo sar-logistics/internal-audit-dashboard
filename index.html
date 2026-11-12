@@ -227,6 +227,21 @@
     .sidebar-foot { padding: 10px 24px 14px; }
     .data-row { margin-bottom: 8px; }
   }
+  /* Status: monthly audit checklist */
+  .ck-tbl td { vertical-align: middle; }
+  .ck-tbl .ck-sec td { background: #E8EEF9; color: #2C4E82; font-weight: 700; }
+  .ck-tbl .ck-sr { width: 56px; text-align: center; color: var(--ink-faint); }
+  .ck-tbl select { min-width: 150px; }
+  .ck-tbl select[data-st="Completed"] { background-color: #E1F5EA; border-color: #9FD9B8; color: #1F8A4C; }
+  .ck-tbl select[data-st="In Progress"] { background-color: #FFF4DE; border-color: #F2CF8A; color: #A86200; }
+  .ck-tbl select[data-st="Not Applicable"] { color: var(--ink-faint); }
+  .ck-tbl input[type=text] { width: 100%; min-width: 180px; font: inherit; font-size: 13px; border: 1px solid #D5DCEA; border-radius: 8px; padding: 7px 10px; }
+  .ck-tbl input:disabled, .ck-tbl select:disabled { cursor: default; opacity: .7; background: #F6F8FC; }
+  .ck-tbl .muted { color: var(--ink-faint); font-size: 12px; white-space: nowrap; }
+  .ck-sum { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ck-sum span { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: #F1F4FA; color: var(--ink-soft); }
+  .ck-sum .done { background: #E1F5EA; color: #1F8A4C; }
+  .ck-sum .prog { background: #FFF4DE; color: #A86200; }
   .adm-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); background: #FAFBFD; }
   .adm-add input { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; background: var(--card); }
   .adm-add select, .adm-tbl select { border-radius: 8px; }
@@ -468,6 +483,19 @@
       </div>
     </div>
     <div class="content hidden" id="sysSoon"><div class="co-empty" id="sysSoonText"></div></div>
+    <div class="content hidden" id="statusContent">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Audit Checklist</h2>
+          <div class="ck-sum" id="ckSum"></div>
+          <label class="fx">Month <select class="select" id="ckMonth" aria-label="Month"></select></label>
+        </div>
+        <div class="tbl-wrap"><table class="kt adm-tbl ck-tbl">
+          <thead><tr><th class="ck-sr">Sr No</th><th>Audit Point</th><th>Status</th><th>Completed On</th><th>Remarks</th><th>Updated</th></tr></thead>
+          <tbody id="ckBody"></tbody>
+        </table></div>
+      </div>
+    </div>
     <div class="content hidden" id="usageContent">
       <div class="panel">
         <div class="panel-head">
@@ -985,8 +1013,14 @@ $("btExpand").onclick = () => {
 };
 $("btReports").onclick = (e) => {
   const b = e.target.closest("[data-report]");
-  if (b) { showView("data"); bt.report = b.dataset.report; renderBranchTable(); }
-  else if (e.target.closest("[data-sys=status]")) { closeKpi(); showView("status"); }
+  if (b) {
+    const fromStatus = currentView === "status";
+    showView("data"); bt.report = b.dataset.report; renderBranchTable();
+    // the Status page may have switched the company tab: load that company's data
+    const on = document.querySelector("#companyTabs button.on");
+    if (fromStatus && on && on.dataset.co !== company) on.click();
+  }
+  else if (e.target.closest("[data-sys=status]")) openChecklist();
 };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btMonth", "btFrom", "btTo", "btFromDay", "btToDay", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
@@ -1360,6 +1394,10 @@ $("companyTabs").onclick = (e) => {
   const b = e.target.closest("button[data-co]");
   if (!b) return;
   const co = b.dataset.co, connected = !!ENTITIES[co];
+  if (currentView === "status") {   // on the checklist the tabs pick whose checklist to show
+    document.querySelectorAll("#companyTabs button").forEach((x) => x.classList.toggle("on", x === b));
+    return loadChecklist();
+  }
   showView("data");
   document.querySelectorAll("#companyTabs button").forEach((x) => x.classList.toggle("on", x === b));
   $("canadaContent").classList.toggle("hidden", !connected);
@@ -1383,20 +1421,24 @@ const adm = { users: [], breakGlass: [] };
 const ROLE_NAMES = ["Viewer", "Strategy", "Admin"];   // Strategy sees the same data as Viewer for now
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
-// "usage" shows sign-in counts per user; "status" / "teams" / "tickets" are still to be built and show a coming-soon note.
+// "status" is the monthly audit checklist of the selected company; "usage" shows sign-in counts per user;
+// "teams" / "tickets" are still to be built and show a coming-soon note.
 const SYS_PAGES = { status: "Status", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
-const SOON_PAGES = ["status", "teams", "tickets"];
+const SOON_PAGES = ["teams", "tickets"];
+let currentView = "data";
 function showView(view) {
+  currentView = view;
   const soon = SOON_PAGES.includes(view);
   const admin = view === "admin" || !!SYS_PAGES[view];   // every System page hides the company tabs and filters
   $("adminContent").classList.toggle("hidden", view !== "admin");
+  $("statusContent").classList.toggle("hidden", view !== "status");
   $("usageContent").classList.toggle("hidden", view !== "usage");
   $("sysSoon").classList.toggle("hidden", !soon);
   if (soon) $("sysSoonText").textContent = `${SYS_PAGES[view]} is coming soon.`;
   $("pageTitle").textContent = SYS_PAGES[view] || "Admin Panel";
   $("navAdmin").classList.toggle("active", view === "admin");
   document.querySelectorAll(".sidebar [data-sys]").forEach((x) => x.classList.toggle("active", x.dataset.sys === view));
-  $("companyTabs").classList.toggle("hidden", admin);
+  $("companyTabs").classList.toggle("hidden", admin && view !== "status");   // the checklist is kept per company
   document.querySelectorAll("#btReports [data-report]").forEach((x) => x.classList.toggle("active", !admin && x.dataset.report === bt.report));
   const co = admin ? null : document.querySelector("#companyTabs button.on")?.dataset.co || company;
   const connected = !admin && !!ENTITIES[co];
@@ -1443,6 +1485,119 @@ function renderUsers() {
       <td>${self(u) ? "" : '<button type="button" class="link" data-act="delete">Remove</button>'}</td></tr>`;
   }).join("") : `<tr><td class="empty" colspan="7">${adm.users.length ? "No users match." : "No users yet. Add the first one above."}</td></tr>`;
 }
+
+// ============================================================ Status: monthly audit checklist
+// Audit points marked "Checklist vs Metric = Yes" in the audit sheet. Section A's other points and
+// section C are still to be added.
+const AUDIT_POINTS = [
+  { sec: "A." },
+  { sr: 8, name: "BL Updation & Release" },
+  { sec: "B. Reconciliations, Provisions & Compliance" },
+  { sr: 9, name: "Interest Income / Other Income" },
+  { sr: 10, name: "GST Reconciliation" },
+  { sr: 11, name: "Bank Reco." },
+  { sr: 12, name: "TDS Reconciliation (Vendors)" },
+  { sr: 13, name: "26 AS reconciliation" },
+  { sr: 14, name: "Payroll Reco." },
+  { sr: 16, name: "Depreciation" },
+  { sr: 18, name: "Prepaid Accounting" },
+  { sr: 20, name: "Clearing of debit balances in Creditors" },
+  { sr: 21, name: "Clearing of credit balances in Customers" },
+  { sr: 25, name: "Loan statement Reconciliation" },
+  { sr: 26, name: "PF Reconciliation" },
+  { sr: 27, name: "Accounting of Credit card" },
+  { sr: 28, name: "Impress Account" },
+  { sr: 29, name: "Preparation of Transfer Pricing Data" },
+  { sr: 32, name: "Worldwide tracker to track all taxation / legal notices (Taxation, HR)" },
+];
+const CK_STATUSES = ["Pending", "In Progress", "Completed", "Not Applicable"];
+const ck = { rows: {} };   // item -> saved row of the company and month shown
+const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
+const ckCanEdit = () => ["admin", "strategy"].includes(me && me.role);
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Months from Apr 2026 to this month, newest first; this month is the default
+function fillCkMonths() {
+  const sel = $("ckMonth"), now = new Date(), opts = [];
+  for (let d = new Date(now.getFullYear(), now.getMonth(), 1); d >= new Date(2026, 3, 1); d.setMonth(d.getMonth() - 1)) {
+    opts.push([ymd(d).slice(0, 7), d.toLocaleString("en-GB", { month: "short", year: "numeric" })]);
+  }
+  const keep = sel.value;
+  sel.innerHTML = opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+  if (opts.some(([v]) => v === keep)) sel.value = keep;
+}
+
+function openChecklist() {
+  closeKpi();
+  showView("status");
+  fillCkMonths();
+  loadChecklist();
+}
+
+async function loadChecklist() {
+  ck.rows = {};
+  $("ckSum").innerHTML = "";
+  $("ckBody").innerHTML = `<tr><td class="empty" colspan="6">Loading…</td></tr>`;
+  const company = ckCompany(), month = $("ckMonth").value;
+  try {
+    const r = await api("/api/mongo", { dataset: "checklist", company, month });
+    if (company !== ckCompany() || month !== $("ckMonth").value) return;   // the user moved on meanwhile
+    (r.rows || []).forEach((x) => { ck.rows[x.item] = x; });
+    renderChecklist();
+  } catch (e) {
+    if (!["signed out", "no access"].includes(e.message)) $("ckBody").innerHTML = `<tr><td class="empty" colspan="6">${esc(e.message)}</td></tr>`;
+  }
+}
+
+const ckUpdated = (x) => x && x.updatedAt ? `${fmtSignIn(x.updatedAt)}<br>${esc(String(x.updatedBy || "").split("@")[0])}` : "—";
+
+function renderCkSummary() {
+  const pts = AUDIT_POINTS.filter((p) => p.sr);
+  const count = (st) => pts.filter((p) => ((ck.rows[p.sr] || {}).status || "Pending") === st).length;
+  const done = count("Completed"), na = count("Not Applicable"), due = pts.length - na;
+  $("ckSum").innerHTML = `<span class="done">${done} of ${due} completed${due ? ` (${Math.round(done / due * 100)}%)` : ""}</span>`
+    + `<span class="prog">${count("In Progress")} in progress</span><span>${count("Pending")} pending</span>`
+    + (na ? `<span>${na} not applicable</span>` : "");
+}
+
+function renderChecklist() {
+  const dis = ckCanEdit() ? "" : "disabled";
+  $("ckBody").innerHTML = AUDIT_POINTS.map((p) => {
+    if (p.sec) return `<tr class="ck-sec"><td colspan="6">${esc(p.sec)}</td></tr>`;
+    const x = ck.rows[p.sr] || {}, st = x.status || "Pending";
+    return `<tr data-item="${p.sr}">
+      <td class="ck-sr">${p.sr}</td><td>${esc(p.name)}</td>
+      <td><select data-f="status" data-st="${st}" ${dis}>${CK_STATUSES.map((v) => `<option${v === st ? " selected" : ""}>${v}</option>`).join("")}</select></td>
+      <td><input type="date" class="date-in" data-f="completedOn" value="${esc(x.completedOn || "")}" ${dis} aria-label="Completed on"></td>
+      <td><input type="text" data-f="remarks" value="${esc(x.remarks || "")}" maxlength="1000" placeholder="${dis ? "" : "Add remarks…"}" ${dis} aria-label="Remarks"></td>
+      <td class="muted" data-f="updated">${ckUpdated(ck.rows[p.sr])}</td></tr>`;
+  }).join("");
+  renderCkSummary();
+}
+
+// Each change saves that audit point's row
+$("ckBody").addEventListener("change", async (e) => {
+  const tr = e.target.closest("tr[data-item]");
+  if (!tr || !ckCanEdit()) return;
+  const f = (k) => tr.querySelector(`[data-f="${k}"]`);
+  if (e.target === f("status")) {
+    f("status").dataset.st = f("status").value;
+    if (f("status").value === "Completed" && !f("completedOn").value) f("completedOn").value = ymd(new Date());
+  }
+  const company = ckCompany(), month = $("ckMonth").value;
+  f("updated").textContent = "Saving…";
+  try {
+    const r = await api("/api/mongo", { dataset: "saveChecklist", company, month, item: Number(tr.dataset.item),
+      status: f("status").value, completedOn: f("completedOn").value, remarks: f("remarks").value });
+    if (company !== ckCompany() || month !== $("ckMonth").value) return;
+    ck.rows[r.row.item] = r.row;
+    f("updated").innerHTML = ckUpdated(r.row);
+    renderCkSummary();
+  } catch (err) {
+    if (!["signed out", "no access"].includes(err.message)) f("updated").innerHTML = `<span style="color:var(--coral)">${esc(err.message)}</span>`;
+  }
+});
+$("ckMonth").onchange = loadChecklist;
 
 // Most recent sign-in first; users who never signed in go last
 function renderUsage() {
