@@ -1530,7 +1530,9 @@ const AUDIT_POINTS = [
 // set yet (Pending). Older "Completed" / "In Progress" entries show as Done / WIP. Remarks saved earlier are kept.
 const CK_STATUSES = ["WIP", "Issue", "Done"];
 const CK_OLD = { Completed: "Done", "In Progress": "WIP" };
-const ck = { rows: {}, company: "" };   // "item|month" -> saved row of the company shown
+// Statuses are kept per LOB. All LOBs rolls them up (read-only): Done when every LOB is Done, Issue when any
+// LOB has an Issue, WIP when some work is marked, else "—".
+const ck = { rows: {}, byLob: {}, lobs: [], all: true, company: "" };   // "item|month" -> saved row / { lob: row }
 const ckKey = (item, month) => `${item}|${month}`;
 const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
 const ckCanEdit = () => ["admin", "strategy"].includes(me && me.role);
@@ -1573,12 +1575,11 @@ async function ckLobs(co) {
   return [...lobs].sort();
 }
 
-// Each LOB keeps its own statuses; "All LOBs" is the company-wide checklist
 async function loadChecklist() {
   fillCkMonths();
   const company = ckCompany(), newCo = ck.company !== company;
   ck.company = company;
-  ck.rows = {};
+  ck.rows = {}; ck.byLob = {};
   $("ckCount").textContent = "";
   $("ckHead").innerHTML = "";
   $("ckBody").innerHTML = `<tr><td class="empty">Loading…</td></tr>`;
@@ -1588,32 +1589,51 @@ async function loadChecklist() {
       const lobs = await ckLobs(company).catch((e) => { console.warn("LOBs:", e.message); return []; });   // the checklist still works without them
       if (company !== ckCompany()) return;
       $("ckLob").innerHTML += lobs.map((l) => `<option>${esc(l)}</option>`).join("");
+      ck.lobs = lobs;
     }
     const lob = $("ckLob").value;
-    const r = await api("/api/mongo", { dataset: "checklist", company, lob });
+    const r = await api("/api/mongo", { dataset: "checklist", company, lob: lob || "*" });
     if (company !== ckCompany() || lob !== $("ckLob").value) return;   // the user moved on meanwhile
-    (r.rows || []).filter((x) => !x.week).forEach((x) => { ck.rows[ckKey(x.item, x.month)] = x; });
+    ck.all = !lob;
+    (r.rows || []).filter((x) => !x.week).forEach((x) => {
+      if (ck.all) (ck.byLob[ckKey(x.item, x.month)] ||= {})[x.lob] = x;
+      else ck.rows[ckKey(x.item, x.month)] = x;
+    });
     renderChecklist();
   } catch (e) {
     if (!["signed out", "no access"].includes(e.message)) $("ckBody").innerHTML = `<tr><td class="empty">${esc(e.message)}</td></tr>`;
   }
 }
 
-const ckStatus = (item, m) => { const st = (ck.rows[ckKey(item, m)] || {}).status || ""; return CK_OLD[st] || (CK_STATUSES.includes(st) ? st : ""); };
+const ckNorm = (x) => { const st = (x || {}).status || ""; return CK_OLD[st] || (CK_STATUSES.includes(st) ? st : ""); };
+const ckLobsOf = (item, m) => ck.lobs.length ? ck.lobs : Object.keys(ck.byLob[ckKey(item, m)] || {});
+function ckStatus(item, m) {
+  if (!ck.all) return ckNorm(ck.rows[ckKey(item, m)]);
+  const per = ck.byLob[ckKey(item, m)] || {}, sts = ckLobsOf(item, m).map((l) => ckNorm(per[l]));
+  if (sts.length && sts.every((v) => v === "Done")) return "Done";
+  if (sts.includes("Issue")) return "Issue";
+  return sts.some(Boolean) ? "WIP" : "";
+}
 const ckDone = (item, m) => ckStatus(item, m) === "Done";
 
 function renderChecklist() {
   if ($("ckFrom").value > $("ckTo").value) $("ckTo").value = $("ckFrom").value;
-  const months = ckMonths(), pts = ckPoints(), dis = ckCanEdit() ? "" : "disabled";
+  const months = ckMonths(), pts = ckPoints(), dis = ckCanEdit() && !ck.all ? "" : "disabled";
   const total = pts.reduce((a, p) => a + months.filter((m) => ckDone(p.sr, m)).length, 0);
-  $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * months.length)} items done`;
+  $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * months.length)} items done`
+    + (ck.all && ckCanEdit() ? " · pick an LOB to update" : "");
   $("ckHead").innerHTML = `<tr><th>Audit Point</th>${months.map((m) => `<th>${ckLabel(m)}</th>`).join("")}</tr>`;
-  const tip = (x) => x && x.updatedAt ? ` title="${esc(`${CK_OLD[x.status] || x.status} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}`)}"` : "";
+  const tip1 = (x) => x && x.updatedAt ? `${ckNorm(x) || "—"} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}` : "";
+  const tip = (item, m) => {   // All LOBs: each LOB's status on its own line
+    const t = ck.all ? ckLobsOf(item, m).map((l) => `${l}: ${ckNorm((ck.byLob[ckKey(item, m)] || {})[l]) || "—"}`).join("\n")
+                     : tip1(ck.rows[ckKey(item, m)]);
+    return t ? ` title="${esc(t)}"` : "";
+  };
   let html = `<tr class="grand"><td>Items Done</td>`
     + months.map((m) => `<td>${pts.filter((p) => ckDone(p.sr, m)).length} / ${pts.length}</td>`).join("") + "</tr>";
   html += pts.map((p, i) => `<tr data-item="${p.sr}"><td><span class="ck-sr">${i + 1}</span>${esc(p.name)}</td>`
     + months.map((m) => { const st = ckStatus(p.sr, m);
-        return `<td data-month="${m}"${tip(ck.rows[ckKey(p.sr, m)])}><select class="ck-st" data-st="${st}" ${dis} aria-label="${esc(p.name)} ${ckLabel(m)}">`
+        return `<td data-month="${m}"${tip(p.sr, m)}><select class="ck-st" data-st="${st}" ${dis} aria-label="${esc(p.name)} ${ckLabel(m)}">`
           + `<option value=""${st ? "" : " selected"}>—</option>${CK_STATUSES.map((v) => `<option${v === st ? " selected" : ""}>${v}</option>`).join("")}</select></td>`; }).join("")
     + "</tr>").join("");
   $("ckBody").innerHTML = html;
@@ -1622,7 +1642,7 @@ function renderChecklist() {
 // Each pick saves that audit point and month
 $("ckBody").addEventListener("change", async (e) => {
   const td = e.target.closest("td[data-month]"), tr = e.target.closest("tr[data-item]");
-  if (!td || !tr || !ckCanEdit()) return;
+  if (!td || !tr || !ckCanEdit() || ck.all) return;
   const company = ckCompany(), lob = $("ckLob").value, month = td.dataset.month, item = Number(tr.dataset.item), st = e.target.value;
   const old = ck.rows[ckKey(item, month)] || {}, was = ckStatus(item, month);
   e.target.dataset.st = st;

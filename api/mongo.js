@@ -6,13 +6,14 @@
 //   POST /api/mongo  { dataset: "saveUser", email, name, role, active } -> { ok }  (admin; adds or updates)
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
 //   POST /api/mongo  { dataset: "checklist", company, lob, month? } -> { rows }    (signed in; month "2026-11",
-//                                                                                   every month when left out)
+//                                                                                   every month when left out;
+//                                                                                   lob "*" = every LOB's rows)
 //   POST /api/mongo  { dataset: "saveChecklist", company, lob, month, item, week, status, completedOn, remarks } -> { row }
 //                                                                                   (Admin or Strategy)
 //
 // Audit checklist: collection "checklist" of sar-internal-audit, one document per company, month and
-// audit point { company, lob, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. lob is ""
-// for the company-wide checklist (All LOBs), else an LOB name as the reports show it (e.g. "Sea Export"). week is 0
+// audit point { company, lob, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. lob is an
+// LOB name as the reports show it (e.g. "Sea Export"); the page rolls them up for All LOBs. week is 0
 // for monthly points; weekly points (26 AS reconciliation) keep one document per week of the month, 1–6.
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
@@ -190,7 +191,8 @@ async function checklist(me, body) {
   const month = String(body.month || "");
   if (!COMPANIES.includes(company)) throw new HttpError(400, "Unknown company.");
   const lob = String(body.lob || "").trim().slice(0, 60);
-  const lobQuery = lob || { $in: ["", null] };   // entries saved before LOBs existed are company-wide
+  if (lob === "*" && body.dataset !== "checklist") throw new HttpError(400, "Pick an LOB to update.");
+  const lobQuery = lob === "*" ? { $nin: ["", null] } : lob || { $in: ["", null] };
   const monthOk = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
   if (!monthOk && (month || body.dataset !== "checklist")) throw new HttpError(400, "Month must look like 2026-11.");
   const col = await checklistCol();
