@@ -463,6 +463,19 @@
       </div>
     </div>
     <div class="content hidden" id="sysSoon"><div class="co-empty" id="sysSoonText"></div></div>
+    <div class="content hidden" id="usageContent">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Sign-ins</h2>
+          <span class="count" id="useCount"></span>
+          <input class="km-search" id="useSearch" placeholder="Search name, email or role…" aria-label="Search users">
+        </div>
+        <div class="tbl-wrap"><table class="kt adm-tbl">
+          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th class="num">Sign-ins</th><th>Last sign-in</th></tr></thead>
+          <tbody id="useBody"></tbody>
+        </table></div>
+      </div>
+    </div>
     <div class="content hidden" id="adminContent">
       <div class="panel">
         <div class="panel-head">
@@ -478,7 +491,7 @@
           <span id="admMsg"></span>
         </form>
         <div class="tbl-wrap"><table class="kt adm-tbl">
-          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th class="num">Sign-ins</th><th>Last sign-in</th><th>Added by</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Added by</th><th></th></tr></thead>
           <tbody id="admBody"></tbody>
         </table></div>
       </div>
@@ -1361,12 +1374,14 @@ const adm = { users: [], breakGlass: [] };
 const ROLE_NAMES = ["Viewer", "Strategy", "Admin"];   // Strategy sees the same data as Viewer for now
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
-// "usage" / "teams" / "tickets" are System pages still to be built: they show a coming-soon note.
+// "usage" shows sign-in counts per user; "teams" / "tickets" are still to be built and show a coming-soon note.
 const SYS_PAGES = { usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
+const SOON_PAGES = ["teams", "tickets"];
 function showView(view) {
-  const soon = !!SYS_PAGES[view];
-  const admin = view === "admin" || soon;   // every System page hides the company tabs and filters
+  const soon = SOON_PAGES.includes(view);
+  const admin = view === "admin" || !!SYS_PAGES[view];   // every System page hides the company tabs and filters
   $("adminContent").classList.toggle("hidden", view !== "admin");
+  $("usageContent").classList.toggle("hidden", view !== "usage");
   $("sysSoon").classList.toggle("hidden", !soon);
   if (soon) $("sysSoonText").textContent = `${SYS_PAGES[view]} is coming soon.`;
   $("pageTitle").textContent = SYS_PAGES[view] || "Admin Panel";
@@ -1383,18 +1398,22 @@ function showView(view) {
   $("caRefresh").classList.toggle("hidden", !connected);
 }
 
-async function openAdmin() {
+// Admin Panel and Usage Analytics both read the users list
+async function loadUsers(view, body, cols, render) {
   closeKpi();
-  showView("admin");
-  $("admBody").innerHTML = `<tr><td class="empty" colspan="9">Loading…</td></tr>`;
+  showView(view);
+  $(body).innerHTML = `<tr><td class="empty" colspan="${cols}">Loading…</td></tr>`;
   try {
     const r = await api("/api/mongo", { dataset: "users" });
     adm.users = r.users || []; adm.breakGlass = r.breakGlass || [];
-    renderUsers();
+    render();
   } catch (e) {
-    if (!["signed out", "no access"].includes(e.message)) $("admBody").innerHTML = `<tr><td class="empty" colspan="9">${esc(e.message)}</td></tr>`;
+    if (!["signed out", "no access"].includes(e.message)) $(body).innerHTML = `<tr><td class="empty" colspan="${cols}">${esc(e.message)}</td></tr>`;
   }
 }
+const openAdmin = () => loadUsers("admin", "admBody", 7, renderUsers);
+const openUsage = () => loadUsers("usage", "useBody", 7, renderUsage);
+const plural = (k, one, many) => `${fmtInt(k)} ${k === 1 ? one : many}`;
 
 const fmtSignIn = (v) => { if (!v) return "—"; const d = new Date(v); return isNaN(d) ? "—" : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
 
@@ -1402,9 +1421,7 @@ function renderUsers() {
   const q = $("admSearch").value.trim().toLowerCase();
   const rows = adm.users.filter((u) => !q || [u.name, u.email, u.role].some((v) => String(v || "").toLowerCase().includes(q)));
   const active = adm.users.filter((u) => u.active !== false).length;
-  const logins = adm.users.reduce((a, u) => a + (Number(u.loginCount) || 0), 0);
-  const n = (k, one, many) => `${fmtInt(k)} ${k === 1 ? one : many}`;
-  $("admCount").textContent = `${n(adm.users.length, "user", "users")} · ${fmtInt(active)} active · ${n(logins, "sign-in", "sign-ins")}`;
+  $("admCount").textContent = `${plural(adm.users.length, "user", "users")} · ${fmtInt(active)} active`;
   const self = (u) => String(u.email).toLowerCase() === String(me.email).toLowerCase();
   $("admBody").innerHTML = rows.length ? rows.map((u, i) => {
     const role = ROLE_NAMES.find((r) => r.toLowerCase() === String(u.role || "").trim().toLowerCase()) || "Viewer";
@@ -1413,11 +1430,27 @@ function renderUsers() {
       <td>${i + 1}</td><td>${esc(u.name || "")}</td><td>${e}${self(u) ? ' <span class="muted">(you)</span>' : ""}</td>
       <td><select data-act="role" ${self(u) ? "disabled" : ""}>${ROLE_NAMES.map((r) => `<option${r === role ? " selected" : ""}>${r}</option>`).join("")}</select></td>
       <td><input type="checkbox" data-act="active" ${u.active !== false ? "checked" : ""} ${self(u) ? "disabled" : ""} aria-label="Active"></td>
-      <td class="num">${fmtInt(u.loginCount || 0)}</td>
-      <td class="muted">${fmtSignIn(u.lastLoginAt)}</td>
       <td class="muted">${esc(u.addedBy || "—")}</td>
       <td>${self(u) ? "" : '<button type="button" class="link" data-act="delete">Remove</button>'}</td></tr>`;
-  }).join("") : `<tr><td class="empty" colspan="9">${adm.users.length ? "No users match." : "No users yet. Add the first one above."}</td></tr>`;
+  }).join("") : `<tr><td class="empty" colspan="7">${adm.users.length ? "No users match." : "No users yet. Add the first one above."}</td></tr>`;
+}
+
+// Most recent sign-in first; users who never signed in go last
+function renderUsage() {
+  const q = $("useSearch").value.trim().toLowerCase();
+  const at = (u) => { const t = u.lastLoginAt ? new Date(u.lastLoginAt).getTime() : NaN; return isNaN(t) ? -Infinity : t; };
+  const rows = adm.users.filter((u) => !q || [u.name, u.email, u.role].some((v) => String(v || "").toLowerCase().includes(q)))
+    .sort((a, b) => at(b) - at(a) || (Number(b.loginCount) || 0) - (Number(a.loginCount) || 0));
+  const logins = adm.users.reduce((a, u) => a + (Number(u.loginCount) || 0), 0);
+  const signedIn = adm.users.filter((u) => Number(u.loginCount) > 0).length;
+  const week = adm.users.filter((u) => at(u) >= Date.now() - 7 * 864e5).length;
+  $("useCount").textContent = `${plural(logins, "sign-in", "sign-ins")} · ${fmtInt(signedIn)} of ${plural(adm.users.length, "user", "users")} signed in · ${fmtInt(week)} in the last 7 days`;
+  $("useBody").innerHTML = rows.length ? rows.map((u, i) => {
+    const role = ROLE_NAMES.find((r) => r.toLowerCase() === String(u.role || "").trim().toLowerCase()) || "Viewer";
+    return `<tr><td>${i + 1}</td><td>${esc(u.name || "")}</td><td>${esc(u.email)}</td><td>${role}</td>
+      <td>${u.active !== false ? "Yes" : "No"}</td><td class="num">${fmtInt(u.loginCount || 0)}</td>
+      <td class="muted">${fmtSignIn(u.lastLoginAt)}</td></tr>`;
+  }).join("") : `<tr><td class="empty" colspan="7">${adm.users.length ? "No users match." : "No users yet."}</td></tr>`;
 }
 
 function admMsg(text, ok) { $("admMsg").textContent = text; $("admMsg").className = ok ? "ok" : "err"; }
@@ -1434,7 +1467,12 @@ async function saveUser(u, done) {
 }
 
 $("navAdmin").onclick = openAdmin;
-$("sysNav").addEventListener("click", (e) => { const b = e.target.closest("[data-sys]"); if (b) { closeKpi(); showView(b.dataset.sys); } });
+$("sysNav").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sys]");
+  if (!b) return;
+  if (b.dataset.sys === "usage") openUsage(); else { closeKpi(); showView(b.dataset.sys); }
+});
+$("useSearch").oninput = renderUsage;
 $("sysToggle").onclick = () => { const c = $("sysNav").classList.toggle("collapsed"); $("sysToggle").setAttribute("aria-expanded", String(!c)); };
 $("admSearch").oninput = renderUsers;
 $("admAdd").onsubmit = async (e) => {
