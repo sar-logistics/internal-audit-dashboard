@@ -221,8 +221,8 @@
     .brand { padding: 14px 18px 12px 22px; min-height: 56px; }
     .greeting { padding-bottom: 10px; }
     .nav { padding: 10px 12px; }
-    .nav-label { padding: 6px 12px; }
-    .nav-item, #app.sb-min .nav-item { padding-top: 8px; padding-bottom: 8px; }
+    .nav-label { padding: 4px 12px; }
+    .nav-item, #app.sb-min .nav-item { padding-top: 6px; padding-bottom: 6px; }
     .nav-sys, .nav-group { margin-top: 4px; padding-top: 6px; }
     .sidebar-foot { padding: 10px 24px 14px; }
     .data-row { margin-bottom: 8px; }
@@ -358,6 +358,11 @@
       <div class="nav-item" data-report="fin" title="Finance Pendency">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2M8 10v1.5"/></svg>
         <span>Finance Pendency</span>
+      </div>
+      <div class="nav-label nav-group">Status</div>
+      <div class="nav-item" data-sys="status" title="Status">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 8h3l1.5-4 3 8 1.5-4h4"/></svg>
+        <span>Status</span>
       </div>
     </nav>
     <nav class="nav nav-sys hidden" id="sysNav">
@@ -978,7 +983,11 @@ $("btExpand").onclick = () => {
   if (bt.allOpen) bt.open.clear(); else bt.shown.forEach((b) => bt.open.add(b));
   renderBranchTable();
 };
-$("btReports").onclick = (e) => { const b = e.target.closest("[data-report]"); if (b) { showView("data"); bt.report = b.dataset.report; renderBranchTable(); } };
+$("btReports").onclick = (e) => {
+  const b = e.target.closest("[data-report]");
+  if (b) { showView("data"); bt.report = b.dataset.report; renderBranchTable(); }
+  else if (e.target.closest("[data-sys=status]")) { closeKpi(); showView("status"); }
+};
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btMonth", "btFrom", "btTo", "btFromDay", "btToDay", "btLob"].forEach((id) => { $(id).onchange = renderBranchTable; });
 $("btView").onchange = () => { fillPeriodPickers(false); renderBranchTable(); };
@@ -1374,9 +1383,9 @@ const adm = { users: [], breakGlass: [] };
 const ROLE_NAMES = ["Viewer", "Strategy", "Admin"];   // Strategy sees the same data as Viewer for now
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
-// "usage" shows sign-in counts per user; "teams" / "tickets" are still to be built and show a coming-soon note.
-const SYS_PAGES = { usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
-const SOON_PAGES = ["teams", "tickets"];
+// "usage" shows sign-in counts per user; "status" / "teams" / "tickets" are still to be built and show a coming-soon note.
+const SYS_PAGES = { status: "Status", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
+const SOON_PAGES = ["status", "teams", "tickets"];
 function showView(view) {
   const soon = SOON_PAGES.includes(view);
   const admin = view === "admin" || !!SYS_PAGES[view];   // every System page hides the company tabs and filters
@@ -1386,7 +1395,7 @@ function showView(view) {
   if (soon) $("sysSoonText").textContent = `${SYS_PAGES[view]} is coming soon.`;
   $("pageTitle").textContent = SYS_PAGES[view] || "Admin Panel";
   $("navAdmin").classList.toggle("active", view === "admin");
-  document.querySelectorAll("#sysNav [data-sys]").forEach((x) => x.classList.toggle("active", x.dataset.sys === view));
+  document.querySelectorAll(".sidebar [data-sys]").forEach((x) => x.classList.toggle("active", x.dataset.sys === view));
   $("companyTabs").classList.toggle("hidden", admin);
   document.querySelectorAll("#btReports [data-report]").forEach((x) => x.classList.toggle("active", !admin && x.dataset.report === bt.report));
   const co = admin ? null : document.querySelector("#companyTabs button.on")?.dataset.co || company;
