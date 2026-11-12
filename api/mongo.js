@@ -179,7 +179,8 @@ async function manageUsers(me, body) {
 }
 
 // ============================================================ audit checklist
-const CHECK_STATUSES = ["Pending", "In Progress", "Completed", "Not Applicable"];
+// The Status grid sets WIP / Issue / Done (Pending = nothing set); the older names are still accepted
+const CHECK_STATUSES = ["Pending", "WIP", "Issue", "Done", "In Progress", "Completed", "Not Applicable"];
 const COMPANIES = ["STSPL", "SAR USA", "SAR Canada", "SAR Thailand", "SAR Indonesia"];   // the company tab names
 const checklistCol = async () => (await connectDb(["AUDIT_URI"], AUDIT_DB)).collection("checklist");
 

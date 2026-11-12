@@ -244,13 +244,18 @@
   /* Status: monthly audit checklist */
   .ck-grid th:not(:first-child):not(.gt), .ck-grid td:not(:first-child):not(.gt) { text-align: center; }
   .ck-grid th:first-child, .ck-grid td:first-child { width: 360px; min-width: 360px; max-width: 360px; white-space: normal; }
-  .ck-grid th.gt, .ck-grid td.gt { left: 360px; }
+  .ck-grid th:first-child, .ck-grid td:first-child { box-shadow: inset -1px 0 0 var(--line), 6px 0 8px -6px rgba(28,33,54,0.22); }
   .ck-grid .ck-sr { display: inline-block; width: 26px; color: var(--ink-faint); font-weight: 600; }
-  .ck-grid input[type=checkbox] { width: 17px; height: 17px; accent-color: #1F8A4C; cursor: pointer; vertical-align: middle; }
-  .ck-grid input[type=checkbox]:disabled { cursor: default; }
+  .ck-grid td { padding: 8px 10px; }
+  .ck-st { -webkit-appearance: none; appearance: none; font: inherit; font-size: 12px; font-weight: 700; text-align: center; text-align-last: center;
+           width: 74px; padding: 5px 6px; border-radius: 999px; border: 1px dashed #D5DCEA; background: #fff; color: #A9B2C6; cursor: pointer; }
+  .ck-st:hover:not(:disabled) { border-color: #6488D6; }
+  .ck-st:disabled { cursor: default; }
+  .ck-st[data-st="Done"]  { border: 1px solid #9FD9B8; background: #E1F5EA; color: #1F8A4C; }
+  .ck-st[data-st="WIP"]   { border: 1px solid #F2CF8A; background: #FFF4DE; color: #A86200; }
+  .ck-st[data-st="Issue"] { border: 1px solid #F3B4AA; background: #FDECEA; color: #C0392B; }
   .ck-grid td.saving { opacity: .5; }
-  .ck-grid td.ck-err input { outline: 2px solid var(--coral); }
-  .ck-grid td.gt.all { color: #1F8A4C; }
+  .ck-grid td.ck-err .ck-st { outline: 2px solid var(--coral); }
   .adm-add { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); background: #FAFBFD; }
   .adm-add input { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; background: var(--card); }
   .adm-add select, .adm-tbl select { border-radius: 8px; }
@@ -1515,8 +1520,10 @@ const AUDIT_POINTS = [
   { sr: 29, name: "Preparation of Transfer Pricing Data" },
   { sr: 32, name: "Worldwide tracker to track all taxation / legal notices (Taxation, HR)" },
 ];
-// One checkbox per audit point and month: ticked = status "Completed" (saved with today's date),
-// unticked = "Pending". Remarks saved earlier are kept.
+// One status per audit point and month: WIP, Issue or Done (Done is saved with today's date); "—" = nothing
+// set yet (Pending). Older "Completed" / "In Progress" entries show as Done / WIP. Remarks saved earlier are kept.
+const CK_STATUSES = ["WIP", "Issue", "Done"];
+const CK_OLD = { Completed: "Done", "In Progress": "WIP" };
 const ck = { rows: {}, company: "" };   // "item|month" -> saved row of the company shown
 const ckKey = (item, month) => `${item}|${month}`;
 const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
@@ -1565,41 +1572,43 @@ async function loadChecklist() {
   }
 }
 
-const ckDone = (item, m) => (ck.rows[ckKey(item, m)] || {}).status === "Completed";
+const ckStatus = (item, m) => { const st = (ck.rows[ckKey(item, m)] || {}).status || ""; return CK_OLD[st] || (CK_STATUSES.includes(st) ? st : ""); };
+const ckDone = (item, m) => ckStatus(item, m) === "Done";
 
 function renderChecklist() {
   if ($("ckFrom").value > $("ckTo").value) $("ckTo").value = $("ckFrom").value;
   const months = ckMonths(), pts = ckPoints(), dis = ckCanEdit() ? "" : "disabled";
-  const done = (p) => months.filter((m) => ckDone(p.sr, m)).length;
-  const total = pts.reduce((a, p) => a + done(p), 0);
-  $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * months.length)} checks done`;
-  $("ckHead").innerHTML = `<tr><th>Audit Point</th><th class="gt">Grand Total</th>${months.map((m) => `<th>${ckLabel(m)}</th>`).join("")}</tr>`;
-  const tip = (x) => x && x.updatedAt ? ` title="${esc(`${x.status} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}`)}"` : "";
-  let html = `<tr class="grand"><td>Grand Total</td><td class="gt">${fmtInt(total)} / ${fmtInt(pts.length * months.length)}</td>`
+  const total = pts.reduce((a, p) => a + months.filter((m) => ckDone(p.sr, m)).length, 0);
+  $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * months.length)} items done`;
+  $("ckHead").innerHTML = `<tr><th>Audit Point</th>${months.map((m) => `<th>${ckLabel(m)}</th>`).join("")}</tr>`;
+  const tip = (x) => x && x.updatedAt ? ` title="${esc(`${CK_OLD[x.status] || x.status} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}`)}"` : "";
+  let html = `<tr class="grand"><td>Items Done</td>`
     + months.map((m) => `<td>${pts.filter((p) => ckDone(p.sr, m)).length} / ${pts.length}</td>`).join("") + "</tr>";
   html += pts.map((p, i) => `<tr data-item="${p.sr}"><td><span class="ck-sr">${i + 1}</span>${esc(p.name)}</td>`
-    + `<td class="gt${done(p) === months.length ? " all" : ""}">${done(p)} / ${months.length}</td>`
-    + months.map((m) => `<td data-month="${m}"${tip(ck.rows[ckKey(p.sr, m)])}><input type="checkbox" ${ckDone(p.sr, m) ? "checked" : ""} ${dis} aria-label="${esc(p.name)} ${ckLabel(m)}"></td>`).join("")
+    + months.map((m) => { const st = ckStatus(p.sr, m);
+        return `<td data-month="${m}"${tip(ck.rows[ckKey(p.sr, m)])}><select class="ck-st" data-st="${st}" ${dis} aria-label="${esc(p.name)} ${ckLabel(m)}">`
+          + `<option value=""${st ? "" : " selected"}>—</option>${CK_STATUSES.map((v) => `<option${v === st ? " selected" : ""}>${v}</option>`).join("")}</select></td>`; }).join("")
     + "</tr>").join("");
   $("ckBody").innerHTML = html;
 }
 
-// Each tick saves that audit point and month
+// Each pick saves that audit point and month
 $("ckBody").addEventListener("change", async (e) => {
   const td = e.target.closest("td[data-month]"), tr = e.target.closest("tr[data-item]");
   if (!td || !tr || !ckCanEdit()) return;
-  const company = ckCompany(), month = td.dataset.month, item = Number(tr.dataset.item), on = e.target.checked;
-  const old = ck.rows[ckKey(item, month)] || {};
+  const company = ckCompany(), month = td.dataset.month, item = Number(tr.dataset.item), st = e.target.value;
+  const old = ck.rows[ckKey(item, month)] || {}, was = ckStatus(item, month);
+  e.target.dataset.st = st;
   td.classList.add("saving"); td.classList.remove("ck-err");
   try {
-    const r = await api("/api/mongo", { dataset: "saveChecklist", company, month, item, status: on ? "Completed" : "Pending",
-      completedOn: on ? ymd(new Date()) : "", remarks: old.remarks || "" });
+    const r = await api("/api/mongo", { dataset: "saveChecklist", company, month, item, status: st || "Pending",
+      completedOn: st === "Done" ? (was === "Done" && old.completedOn) || ymd(new Date()) : "", remarks: old.remarks || "" });
     if (company !== ckCompany()) return;
     ck.rows[ckKey(item, month)] = { ...r.row, month };
     renderChecklist();
   } catch (err) {
     if (["signed out", "no access"].includes(err.message)) return;
-    e.target.checked = !on;
+    e.target.value = e.target.dataset.st = was;
     td.classList.remove("saving"); td.classList.add("ck-err"); td.title = err.message;
   }
 });
