@@ -263,7 +263,10 @@ async function tickets(me, body) {
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
-  if (req.method === "GET" && req.query && req.query.config) return res.status(200).json({ googleClientId: GOOGLE_CLIENT_ID });
+  if (req.method === "GET" && req.query && req.query.config) {
+    if (process.env.AUDIT_URI) usersCol().catch(() => {});   // open the user-list connection before the first sign-in check
+    return res.status(200).json({ googleClientId: GOOGLE_CLIENT_ID });
+  }
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   try {
     const body = req.body || {};

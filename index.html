@@ -807,6 +807,8 @@ function setToken(t) { idToken = t; }
 function showLogin(message) {
   setToken(null);
   me = null;
+  for (const k of Object.keys(loaded)) delete loaded[k];
+  for (const k of Object.keys(pending)) delete pending[k];
   $("app").classList.add("hidden");
   $("login").classList.remove("hidden");
   if (!googleClientId) message = "Sign-in is not configured.";
@@ -840,6 +842,7 @@ async function api(path, body) {
 async function start() {
   $("loginMsg").classList.add("hidden");
   $("loginBusy").classList.remove("hidden");
+  fetchCompany(company).catch(() => {});   // the data loads while the sign-in is checked, not after it
   try { me = await api("/api/mongo", { dataset: "me" }); }
   catch (e) { if (!["signed out", "no access"].includes(e.message)) showLogin("Couldn't sign in: " + e.message); return; }
   finally { $("loginBusy").classList.add("hidden"); }
@@ -869,7 +872,29 @@ const ENTITIES = {
 };
 let company = "SAR Canada";
 const ent = () => ENTITIES[company];
-const loaded = {};   // company -> api response, so switching tabs back doesn't reload
+const loaded = {};    // company -> api response, so switching tabs back doesn't reload
+const pending = {};   // company -> request still running, so a tab click waits for it instead of asking again
+function fetchCompany(co, refresh) {
+  if (!refresh && pending[co]) return pending[co];
+  const p = api("/api/mongo-batch", { dataset: ENTITIES[co].dataset, refresh: !!refresh })
+    .then((k) => { if (pending[co] === p) loaded[co] = k; return k; })
+    .finally(() => { if (pending[co] === p) delete pending[co]; });
+  pending[co] = p;
+  return p;
+}
+// Once the open tab has loaded, the other companies load one at a time in the background,
+// so switching tabs afterwards is instant.
+let prefetching = false;
+async function prefetchOthers() {
+  if (prefetching) return;
+  prefetching = true;
+  try {
+    for (const co of Object.keys(ENTITIES)) {
+      if (!me) break;
+      if (!loaded[co]) await fetchCompany(co).catch(() => {});
+    }
+  } finally { prefetching = false; }
+}
 
 const fmtAmt = (n, locale = "en-US") => Number(n || 0).toLocaleString(locale, { maximumFractionDigits: 0 });   // amounts in whole numbers
 // Amounts are stored in each company's own currency (CAD, IDR, INR, THB, USD). They are shown in USD by default
@@ -907,16 +932,16 @@ function showLoaded(k) {
 
 async function loadCompany(refresh) {
   const co = company;
-  if (!refresh && loaded[co]) { setLoading(false); return showLoaded(loaded[co]); }   // also clears a spinner left by the previous tab
+  if (!refresh && loaded[co]) { setLoading(false); prefetchOthers(); return showLoaded(loaded[co]); }   // also clears a spinner left by the previous tab
   if (!refresh) showLoaded(null);   // a refresh keeps the current numbers under the spinner
   setLoading(true, `${refresh ? "Refreshing" : "Loading"} ${co} data…`);
   $("caRefresh").disabled = true;
   $("caRefresh").classList.add("spinning");
   $("caError").classList.add("hidden");
   try {
-    const k = await api("/api/mongo-batch", { dataset: ENTITIES[co].dataset, refresh: !!refresh });
-    loaded[co] = k;
+    const k = await fetchCompany(co, refresh);
     if (co === company) showLoaded(k);
+    prefetchOthers();
   } catch (e) {
     if (["signed out", "no access"].includes(e.message) || co !== company) return;
     $("caError").textContent = `Couldn't load ${co} data: ` + e.message;
@@ -2123,6 +2148,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") acctOpen(f
 $("signOut").onclick = () => { acctOpen(false); try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 (async () => {
+  fetch("/api/mongo-batch?warm=1").catch(() => {});   // wakes the data function and opens its database connections before sign-in
   try { googleClientId = (await (await fetch("/api/mongo?config=1")).json()).googleClientId; } catch {}
   try { sessionStorage.removeItem("auditIdToken"); } catch {}   // drop a token saved by the earlier build
   showLogin();

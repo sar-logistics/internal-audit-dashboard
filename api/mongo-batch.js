@@ -7,6 +7,8 @@
 //       dataRefreshedAt: { jobs, estimatedVsActual }, builtAt }
 //     The KPI cards and the Branch › Job Owner table are worked out from these rows in the page.
 //     refresh: true skips the 5-minute cache.
+//   GET  /api/mongo-batch?warm=1  (public, returns nothing) opens the database connections, so the page can
+//     wake this function while the sign-in page is showing and the first data call doesn't wait for them.
 //   POST /api/mongo-batch  { dataset: "jobDetails",  entity, jobNos }       -> { rows }  job records for a pop-up
 //   POST /api/mongo-batch  { dataset: "chargeLines", entity, jobNos, kind } -> { rows }  kind "rev" | "cost": charge lines > 0
 //
@@ -382,18 +384,26 @@ const cache = new Map();   // entity -> { payload, at }
 
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
+  if (req.method === "GET" && req.query && req.query.warm) {
+    const conns = Object.keys(ENTITIES).filter((n) => ENTITIES[n].envs.some((v) => process.env[v])).map(getDb);
+    if (process.env.AUDIT_URI) conns.push(connectDb(["AUDIT_URI"], "sar-internal-audit"));   // the user list, read by every sign-in check
+    await Promise.allSettled(conns);
+    return res.status(204).end();
+  }
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const body = req.body || {};
   const entity = ENTITIES[body.dataset] ? body.dataset : (body.entity || "canada");
   try {
-    await authenticate(req);
     entityOf(entity);
-    if (body.dataset === "jobDetails") return res.status(200).json(await jobDetails(await getDb(entity), entity, body));
-    if (body.dataset === "chargeLines") return res.status(200).json(await chargeLines(await getDb(entity), entity, body));
+    const dbP = getDb(entity);   // connect while the sign-in is checked; nothing is read before it passes
+    dbP.catch(() => {});
+    await authenticate(req);
+    if (body.dataset === "jobDetails") return res.status(200).json(await jobDetails(await dbP, entity, body));
+    if (body.dataset === "chargeLines") return res.status(200).json(await chargeLines(await dbP, entity, body));
     if (!ENTITIES[body.dataset]) throw new HttpError(400, "Unknown dataset");
     const hit = cache.get(entity);
     if (body.refresh || !hit || Date.now() - hit.at > TTL_MS) {
-      const db = await getDb(entity);
+      const db = await dbP;
       const data = US_LIKE[entity] ? await usaData(db, entity) : SEA_JOB_COLLECTIONS[entity] ? await seaOpsData(db, entity) : await canadaData(db);
       cache.set(entity, { payload: { ...data, builtAt: new Date().toISOString() }, at: Date.now() });
     }
