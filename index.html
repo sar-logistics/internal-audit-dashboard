@@ -252,6 +252,10 @@
   .ck-grid th:first-child, .ck-grid td:first-child { box-shadow: inset -1px 0 0 var(--line), 6px 0 8px -6px rgba(28,33,54,0.22); }
   .ck-grid .ck-sr { position: absolute; left: 14px; width: 22px; color: var(--ink-faint); font-weight: 600; }
   .ck-grid td { padding: 8px 12px; }
+  .ck-grid thead tr + tr th:first-child { position: static; width: auto; min-width: 0; max-width: none; text-align: center;
+                                         box-shadow: none; border-left: 1px solid var(--line); }   /* Weekly: the week row isn't the name column */
+  .ck-grid th[colspan] { text-align: left !important; color: var(--ink); }   /* Weekly: month name at the start of its weeks */
+  .ck-grid .ck-wk { font-size: 11px; font-weight: 500; color: var(--ink-faint); text-transform: none; letter-spacing: 0; margin-top: 2px; }
   .ck-count { font-size: 13px; color: var(--ink-faint); font-weight: 600; }
   .ck-grid th:not(:first-child), .ck-grid td:not(:first-child) { border-left: 1px solid var(--line); }   /* a line between months */
   .ck-st { -webkit-appearance: none; appearance: none; font: inherit; font-size: 14px; font-weight: 700; text-align: center; text-align-last: center;
@@ -460,7 +464,7 @@
       <div class="filters hidden" id="ckFilters">
         <label for="ckFrom">From</label><select class="select" id="ckFrom"></select>
         <label for="ckTo">To</label><select class="select" id="ckTo"></select>
-        <select class="select" id="ckLob" aria-label="Line of business"><option value="">All LOBs</option></select>
+        <select class="select" id="ckView" aria-label="View"><option value="month" selected>Monthly</option><option value="week">Weekly</option></select>
       </div>
       <div class="topbar-actions">
         <span class="count ck-count hidden" id="ckCount"></span>
@@ -1534,14 +1538,14 @@ const AUDIT_POINTS = [
   { sr: 29, name: "Preparation of Transfer Pricing Data" },
   { sr: 32, name: "Worldwide tracker to track all taxation / legal notices (Taxation, HR)" },
 ];
-// One status per audit point and month: WIP, Issue or Done (Done is saved with today's date); "—" = nothing
+// One status per audit point and period: WIP, Issue or Done (Done is saved with today's date); "—" = nothing
 // set yet (Pending). Older "Completed" / "In Progress" entries show as Done / WIP. Remarks saved earlier are kept.
+// Statuses are kept per company (not per LOB). Monthly and Weekly are separate checklists: a weekly status is
+// saved under the month its ISO week belongs to, with week = 1–6 (the week's place in that month).
 const CK_STATUSES = ["WIP", "Issue", "Done"];
 const CK_OLD = { Completed: "Done", "In Progress": "WIP" };
-// Statuses are kept per LOB. All LOBs rolls them up (read-only): Done when every LOB is Done, Issue when any
-// LOB has an Issue, WIP when some work is marked, else "—".
-const ck = { rows: {}, byLob: {}, lobs: [], all: true, company: "" };   // "item|month" -> saved row / { lob: row }
-const ckKey = (item, month) => `${item}|${month}`;
+const ck = { rows: {}, company: "" };   // "item|month|week" -> saved row
+const ckKey = (item, month, week) => `${item}|${month}|${week || 0}`;
 const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
 const ckCanEdit = () => ["admin", "strategy"].includes(me && me.role);
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1556,6 +1560,15 @@ function ckAllMonths() {
   return out;
 }
 const ckMonths = () => ckAllMonths().filter((m) => m >= $("ckFrom").value && m <= $("ckTo").value);
+// The table's columns: one per month, or (Weekly) one per ISO week of each month that has started by today
+function ckCols() {
+  const months = ckMonths();
+  if ($("ckView").value !== "week") return months.map((m) => ({ month: m, week: 0 }));
+  const today = dayNum(new Date());
+  return months.flatMap((m) => weeksOfMonth(Number(m.slice(0, 4)) * 12 + Number(m.slice(5)) - 1)
+    .map((k, i) => ({ month: m, week: i + 1, k })).filter((c) => PERIODS.week.first(c.k) <= today));
+}
+const ckColLabel = (c) => c.week ? `${ckLabel(c.month)} W${c.week}` : ckLabel(c.month);
 
 function fillCkMonths() {
   const all = ckAllMonths(), opts = all.map((m) => `<option value="${m}">${ckLabel(m)}</option>`).join("");
@@ -1571,44 +1584,19 @@ function openChecklist() {
   loadChecklist();
 }
 
-// LOBs of a company as the reports list them, from its job data (loaded here when its tab wasn't opened yet)
-async function ckLobs(co) {
-  if (!ENTITIES[co]) return [];
-  if (!loaded[co]) loaded[co] = await api("/api/mongo-batch", { dataset: ENTITIES[co].dataset });
-  const lobs = new Set();
-  [loaded[co].jobs, loaded[co].evaJobs].forEach((set) => {
-    const f = set?.fields || [], li = f.indexOf("lob"), di = f.indexOf("direction");
-    (set?.rows || []).forEach((a) => lobs.add(lobLabel(a[li], a[di])));
-  });
-  return [...lobs].sort();
-}
-
 async function loadChecklist() {
   fillCkMonths();
-  const company = ckCompany(), newCo = ck.company !== company;
+  const company = ckCompany();
   ck.company = company;
-  ck.rows = {}; ck.byLob = {};
+  ck.rows = {};
   $("ckCount").textContent = "";
   ["ckKDone", "ckKWip", "ckKIssue"].forEach((id) => { $(id).textContent = "–"; $(id + "Sub").innerHTML = "&nbsp;"; });
   $("ckHead").innerHTML = "";
   $("ckBody").innerHTML = `<tr><td class="empty">Loading…</td></tr>`;
   try {
-    if (newCo) {
-      $("ckLob").innerHTML = `<option value="">All LOBs</option>`;
-      const lobs = await ckLobs(company).catch((e) => { console.warn("LOBs:", e.message); return []; });   // the checklist still works without them
-      if (company !== ckCompany()) return;
-      $("ckLob").innerHTML += lobs.map((l) => `<option>${esc(l)}</option>`).join("");
-      ck.lobs = lobs;
-    }
-    $("ckLob").value = [...$("ckLob").options].some((o) => o.value === lobPick) ? lobPick : "";
-    const lob = $("ckLob").value;
-    const r = await api("/api/mongo", { dataset: "checklist", company, lob: lob || "*" });
-    if (company !== ckCompany() || lob !== $("ckLob").value) return;   // the user moved on meanwhile
-    ck.all = !lob;
-    (r.rows || []).filter((x) => !x.week).forEach((x) => {
-      if (ck.all) (ck.byLob[ckKey(x.item, x.month)] ||= {})[x.lob] = x;
-      else ck.rows[ckKey(x.item, x.month)] = x;
-    });
+    const r = await api("/api/mongo", { dataset: "checklist", company, lob: "" });
+    if (company !== ckCompany()) return;   // the user moved on meanwhile
+    (r.rows || []).forEach((x) => { ck.rows[ckKey(x.item, x.month, x.week)] = x; });
     renderChecklist();
   } catch (e) {
     if (!["signed out", "no access"].includes(e.message)) $("ckBody").innerHTML = `<tr><td class="empty">${esc(e.message)}</td></tr>`;
@@ -1616,59 +1604,54 @@ async function loadChecklist() {
 }
 
 const ckNorm = (x) => { const st = (x || {}).status || ""; return CK_OLD[st] || (CK_STATUSES.includes(st) ? st : ""); };
-const ckLobsOf = (item, m) => ck.lobs.length ? ck.lobs : Object.keys(ck.byLob[ckKey(item, m)] || {});
-function ckStatus(item, m) {
-  if (!ck.all) return ckNorm(ck.rows[ckKey(item, m)]);
-  const per = ck.byLob[ckKey(item, m)] || {}, sts = ckLobsOf(item, m).map((l) => ckNorm(per[l]));
-  if (sts.length && sts.every((v) => v === "Done")) return "Done";
-  if (sts.includes("Issue")) return "Issue";
-  return sts.some(Boolean) ? "WIP" : "";
-}
-const ckDone = (item, m) => ckStatus(item, m) === "Done";
+const ckStatus = (item, c) => ckNorm(ck.rows[ckKey(item, c.month, c.week)]);
 
 function renderChecklist() {
   if ($("ckFrom").value > $("ckTo").value) $("ckTo").value = $("ckFrom").value;
-  const months = ckMonths(), pts = ckPoints(), dis = ckCanEdit() && !ck.all ? "" : "disabled";
-  const total = pts.reduce((a, p) => a + months.filter((m) => ckDone(p.sr, m)).length, 0);
-  $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * months.length)} items done`
-    + (ck.all && ckCanEdit() ? " · pick an LOB to update" : "");
-  $("ckHead").innerHTML = `<tr><th>Audit Point</th>${months.map((m) => `<th>${ckLabel(m)}</th>`).join("")}</tr>`;
-  // KPI cards: audit point × month cells in the range with each status
-  const cells = pts.length * months.length, range = months.length ? `${ckLabel(months[0])} → ${ckLabel(months[months.length - 1])}` : "";
+  const cols = ckCols(), pts = ckPoints(), dis = ckCanEdit() ? "" : "disabled", weekly = $("ckView").value === "week";
+  const done = (p, c) => ckStatus(p.sr, c) === "Done";
+  const total = pts.reduce((a, p) => a + cols.filter((c) => done(p, c)).length, 0);
+  $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * cols.length)} items done`;
+  // Weekly: a month row over its weeks, then each week with its dates
+  $("ckHead").innerHTML = weekly
+    ? `<tr><th rowspan="2">Audit Point</th>${ckMonths().map((m) => [m, cols.filter((c) => c.month === m).length]).filter(([, n]) => n)
+        .map(([m, n]) => `<th colspan="${n}">${ckLabel(m)}</th>`).join("")}</tr>`
+      + `<tr>${cols.map((c) => `<th>W${c.week}<div class="ck-wk">${esc(PERIODS.week.sub(c.k))}</div></th>`).join("")}</tr>`
+    : `<tr><th>Audit Point</th>${cols.map((c) => `<th>${ckLabel(c.month)}</th>`).join("")}</tr>`;
+  // KPI cards: audit point × period cells in the range with each status
+  const cells = pts.length * cols.length, range = cols.length ? `${ckLabel(cols[0].month)} → ${ckLabel(cols[cols.length - 1].month)}` : "";
   [["Done", "ckKDone"], ["WIP", "ckKWip"], ["Issue", "ckKIssue"]].forEach(([st, id]) => {
-    const n = pts.reduce((a, p) => a + months.filter((m) => ckStatus(p.sr, m) === st).length, 0);
+    const n = pts.reduce((a, p) => a + cols.filter((c) => ckStatus(p.sr, c) === st).length, 0);
     $(id).textContent = fmtInt(n);
     $(id + "Sub").textContent = `${cells ? Math.round(n / cells * 100) : 0}% of ${fmtInt(cells)} items · ${range}`;
   });
-  const tip1 = (x) => x && x.updatedAt ? `${ckNorm(x) || "—"} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}` : "";
-  const tip = (item, m) => {   // All LOBs: each LOB's status on its own line
-    const t = ck.all ? ckLobsOf(item, m).map((l) => `${l}: ${ckNorm((ck.byLob[ckKey(item, m)] || {})[l]) || "—"}`).join("\n")
-                     : tip1(ck.rows[ckKey(item, m)]);
-    return t ? ` title="${esc(t)}"` : "";
+  const tip = (item, c) => {
+    const x = ck.rows[ckKey(item, c.month, c.week)];
+    return x && x.updatedAt ? ` title="${esc(`${ckNorm(x) || "—"} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}`)}"` : "";
   };
   let html = `<tr class="grand"><td>Items Done</td>`
-    + months.map((m) => `<td>${pts.filter((p) => ckDone(p.sr, m)).length} / ${pts.length}</td>`).join("") + "</tr>";
+    + cols.map((c) => `<td>${pts.filter((p) => done(p, c)).length} / ${pts.length}</td>`).join("") + "</tr>";
   html += pts.map((p, i) => `<tr data-item="${p.sr}"><td><span class="ck-sr">${i + 1}</span>${esc(p.name)}</td>`
-    + months.map((m) => { const st = ckStatus(p.sr, m);
-        return `<td data-month="${m}"${tip(p.sr, m)}><select class="ck-st" data-st="${st}" ${dis} aria-label="${esc(p.name)} ${ckLabel(m)}">`
+    + cols.map((c) => { const st = ckStatus(p.sr, c);
+        return `<td data-month="${c.month}" data-week="${c.week}"${tip(p.sr, c)}><select class="ck-st" data-st="${st}" ${dis} aria-label="${esc(p.name)} ${ckColLabel(c)}">`
           + `<option value=""${st ? "" : " selected"}>—</option>${CK_STATUSES.map((v) => `<option${v === st ? " selected" : ""}>${v}</option>`).join("")}</select></td>`; }).join("")
     + "</tr>").join("");
   $("ckBody").innerHTML = html;
 }
 
-// Each pick saves that audit point and month
+// Each pick saves that audit point and period
 $("ckBody").addEventListener("change", async (e) => {
   const td = e.target.closest("td[data-month]"), tr = e.target.closest("tr[data-item]");
-  if (!td || !tr || !ckCanEdit() || ck.all) return;
-  const company = ckCompany(), lob = $("ckLob").value, month = td.dataset.month, item = Number(tr.dataset.item), st = e.target.value;
-  const old = ck.rows[ckKey(item, month)] || {}, was = ckStatus(item, month);
+  if (!td || !tr || !ckCanEdit()) return;
+  const company = ckCompany(), month = td.dataset.month, week = Number(td.dataset.week) || 0, item = Number(tr.dataset.item), st = e.target.value;
+  const key = ckKey(item, month, week), old = ck.rows[key] || {}, was = ckNorm(old);
   e.target.dataset.st = st;
   td.classList.add("saving"); td.classList.remove("ck-err");
   try {
-    const r = await api("/api/mongo", { dataset: "saveChecklist", company, lob, month, item, status: st || "Pending",
+    const r = await api("/api/mongo", { dataset: "saveChecklist", company, lob: "", month, week, item, status: st || "Pending",
       completedOn: st === "Done" ? (was === "Done" && old.completedOn) || ymd(new Date()) : "", remarks: old.remarks || "" });
-    if (company !== ckCompany() || lob !== $("ckLob").value) return;
-    ck.rows[ckKey(item, month)] = { ...r.row, month };
+    if (company !== ckCompany()) return;
+    ck.rows[key] = { ...r.row, month };
     renderChecklist();
   } catch (err) {
     if (["signed out", "no access"].includes(err.message)) return;
@@ -1676,12 +1659,7 @@ $("ckBody").addEventListener("change", async (e) => {
     td.classList.remove("saving"); td.classList.add("ck-err"); td.title = err.message;
   }
 });
-$("ckFrom").onchange = $("ckTo").onchange = renderChecklist;
-$("ckLob").onchange = () => {
-  lobPick = $("ckLob").value;
-  if ([...$("btLob").options].some((o) => o.value === lobPick)) $("btLob").value = lobPick;   // the reports follow on return
-  loadChecklist();
-};
+$("ckFrom").onchange = $("ckTo").onchange = $("ckView").onchange = renderChecklist;
 
 // Most recent sign-in first; users who never signed in go last
 function renderUsage() {

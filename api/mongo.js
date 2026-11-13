@@ -13,8 +13,8 @@
 //
 // Audit checklist: collection "checklist" of sar-internal-audit, one document per company, month and
 // audit point { company, lob, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. lob is an
-// LOB name as the reports show it (e.g. "Sea Export"); the page rolls them up for All LOBs. week is 0
-// for monthly points; weekly points (26 AS reconciliation) keep one document per week of the month, 1–6.
+// LOB name as the reports show it (e.g. "Sea Export"); the Status page now saves with lob "" (one status per
+// company). week is 0 for the monthly view; the weekly view keeps one document per ISO week of the month, 1–6.
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
 // per person { email, name, role: "Admin" | "Strategy" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
