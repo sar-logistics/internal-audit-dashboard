@@ -87,6 +87,21 @@
   .acct-menu .account { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
   .btn-menu[aria-expanded="true"], .btn-menu:hover { background: #EEF3FC; border-color: #6488D6; color: #2C4E82; }
   .data-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .acct-item { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line);
+               border-radius: 8px; background: var(--paper); font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .acct-item:hover { border-color: #6488D6; background: #EEF3FC; color: #2C4E82; }
+  .tf-box { width: min(560px, 100%); }
+  .tf-body { display: grid; gap: 6px; padding: 18px 20px; overflow: auto; }
+  .tf-body label { font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin-top: 8px; }
+  .tf-body input, .tf-body textarea { border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: inherit; font-size: 14px; resize: vertical; }
+  .tf-body input:focus, .tf-body textarea:focus { outline: none; border-color: #6488D6; box-shadow: 0 0 0 3px #6488D633; }
+  .tf-where { font-size: 12px; color: var(--ink-faint); margin-top: 6px; }
+  .tf-foot { display: flex; align-items: center; gap: 10px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--line); }
+  #tfMsg { margin-right: auto; font-size: 13px; }
+  #tfMsg.err { color: var(--coral); }
+  #tfMsg.ok { color: var(--good); }
+  .tk-tbl td { vertical-align: top; }
+  .tk-tbl .tk-det { max-width: 360px; white-space: pre-wrap; word-break: break-word; }
   .data-pill { display: flex; align-items: center; gap: 6px; background: #E8F7EE; color: #1F9D5A; font-size: 12px;
                font-weight: 700; padding: 7px 13px; border-radius: 20px; white-space: nowrap; }
   .data-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #1F9D5A; }
@@ -415,9 +430,9 @@
       <button type="button" class="nav-label nav-toggle nav-group" aria-expanded="true">Status
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
       </button>
-      <div class="nav-item" data-sys="status" title="Status">
+      <div class="nav-item" data-sys="status" title="Checklist Items">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 8h3l1.5-4 3 8 1.5-4h4"/></svg>
-        <span>Status</span>
+        <span>Checklist Items</span>
       </div>
       </div>
     </nav>
@@ -469,6 +484,10 @@
               <span class="data-pill"><span class="dot"></span>Live Data</span>
               <span class="last-sync" id="caUpdated"></span>
             </div>
+            <button type="button" class="acct-item" id="ticketOpen">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M1.5 4.5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1V6a2 2 0 0 0 0 4v1.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V10a2 2 0 0 0 0-4z"/><path d="M10 3.5v9" stroke-dasharray="1.5 1.5"/></svg>
+              Submit a ticket
+            </button>
           </div>
         </div>
         <button class="btn-signout" id="signOut" type="button" aria-label="Sign out" title="Sign out">
@@ -549,6 +568,19 @@
         <div class="tbl-wrap"><table class="bt ck-grid"><thead id="ckHead"></thead><tbody id="ckBody"></tbody></table></div>
       </div>
     </div>
+    <div class="content hidden" id="ticketsContent">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Tickets</h2>
+          <span class="count" id="tkCount"></span>
+          <input class="km-search" id="tkSearch" placeholder="Search subject, person or category…" aria-label="Search tickets">
+        </div>
+        <div class="tbl-wrap"><table class="kt adm-tbl tk-tbl">
+          <thead><tr><th>#</th><th>Raised</th><th>By</th><th>Category</th><th>Subject</th><th>Details</th><th>Where</th><th>Status</th></tr></thead>
+          <tbody id="tkBody"></tbody>
+        </table></div>
+      </div>
+    </div>
     <div class="content hidden" id="usageContent">
       <div class="panel">
         <div class="panel-head">
@@ -593,6 +625,29 @@
     <div class="cf-foot"><button type="button" id="cfReset">Reset</button><button type="button" class="cf-apply" id="cfApply">Apply</button></div>
   </div>
 
+  <div class="modal hidden" id="ticketModal" role="dialog" aria-modal="true" aria-labelledby="tfTitle">
+    <form class="modal-box tf-box" id="ticketForm" autocomplete="off">
+      <div class="modal-head">
+        <h3 id="tfTitle">Submit a ticket</h3>
+        <span class="count">The Admins see it under System › Tickets</span>
+        <button class="km-close" id="tfClose" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="tf-body">
+        <label for="tfCategory">Category</label>
+        <select class="select" id="tfCategory"><option>Data issue</option><option>Bug</option><option>Access</option><option>Feature request</option><option>Other</option></select>
+        <label for="tfSubject">Subject</label>
+        <input id="tfSubject" maxlength="200" placeholder="Short summary" required>
+        <label for="tfDetails">Details</label>
+        <textarea id="tfDetails" rows="6" maxlength="4000" placeholder="What happened, where, and what you expected" required></textarea>
+        <div class="tf-where" id="tfWhere"></div>
+      </div>
+      <div class="tf-foot">
+        <span id="tfMsg"></span>
+        <button type="button" class="btn-soft" id="tfCancel">Cancel</button>
+        <button type="submit" class="btn-refresh" id="tfSubmit">Submit</button>
+      </div>
+    </form>
+  </div>
   <div class="modal hidden" id="kpiModal" role="dialog" aria-modal="true" aria-labelledby="kmTitle">
     <div class="modal-box">
       <div class="modal-head">
@@ -1475,9 +1530,9 @@ const ROLE_NAMES = ["Viewer", "Strategy", "Internal Audit", "Admin"];   // Strat
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
 // "status" is the monthly audit checklist of the selected company; "usage" shows sign-in counts per user;
-// "teams" / "tickets" are still to be built and show a coming-soon note.
+// "tickets" lists the tickets raised from the account menu; "teams" is still to be built (coming-soon note).
 const SYS_PAGES = { status: "Audit Checklist — Monthly", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
-const SOON_PAGES = ["teams", "tickets"];
+const SOON_PAGES = ["teams"];
 let currentView = "data";
 function showView(view) {
   currentView = view;
@@ -1488,6 +1543,7 @@ function showView(view) {
   $("ckFilters").classList.toggle("hidden", view !== "status");
   $("ckCount").classList.toggle("hidden", view !== "status");
   $("usageContent").classList.toggle("hidden", view !== "usage");
+  $("ticketsContent").classList.toggle("hidden", view !== "tickets");
   $("sysSoon").classList.toggle("hidden", !soon);
   if (soon) $("sysSoonText").textContent = `${SYS_PAGES[view]} is coming soon.`;
   $("pageTitle").textContent = SYS_PAGES[view] || "Admin Panel";
@@ -1728,9 +1784,91 @@ $("navAdmin").onclick = openAdmin;
 $("sysNav").addEventListener("click", (e) => {
   const b = e.target.closest("[data-sys]");
   if (!b) return;
-  if (b.dataset.sys === "usage") openUsage(); else { closeKpi(); showView(b.dataset.sys); }
+  if (b.dataset.sys === "usage") openUsage();
+  else if (b.dataset.sys === "tickets") openTickets();
+  else { closeKpi(); showView(b.dataset.sys); }
 });
 $("useSearch").oninput = renderUsage;
+
+// Tickets: anyone signed in raises one from the account menu; Admins see them all on System › Tickets
+const tk = { rows: [] };
+const TK_STATUSES = ["Open", "In Progress", "Closed"];
+function ticketWhere() {
+  if (currentView === "status") return { page: "Checklist Items", company: ckCompany() };
+  if (currentView !== "data") return { page: SYS_PAGES[currentView] || "Admin Panel", company: "" };
+  return { page: document.querySelector(`#btReports [data-report="${bt.report}"]`)?.title || "", company: document.querySelector("#companyTabs button.on")?.dataset.co || "" };
+}
+function openTicketForm() {
+  acctOpen(false);
+  const w = ticketWhere();
+  $("tfWhere").textContent = `Raised from: ${[w.page, w.company].filter(Boolean).join(" · ")}`;
+  $("tfMsg").textContent = ""; $("tfMsg").className = "";
+  $("tfSubmit").disabled = false;
+  $("ticketModal").classList.remove("hidden");
+  $("tfSubject").focus();
+}
+const closeTicketForm = () => $("ticketModal").classList.add("hidden");
+$("ticketOpen").onclick = openTicketForm;
+$("tfClose").onclick = $("tfCancel").onclick = closeTicketForm;
+$("ticketModal").onclick = (e) => { if (e.target === $("ticketModal")) closeTicketForm(); };
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("ticketModal").classList.contains("hidden")) closeTicketForm(); });
+$("ticketForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const subject = $("tfSubject").value.trim(), details = $("tfDetails").value.trim();
+  if (!subject || !details) { $("tfMsg").textContent = "Add a subject and the details."; $("tfMsg").className = "err"; return; }
+  $("tfSubmit").disabled = true; $("tfMsg").textContent = "Submitting…"; $("tfMsg").className = "";
+  try {
+    const r = await api("/api/mongo", { dataset: "submitTicket", category: $("tfCategory").value, subject, details, ...ticketWhere() });
+    $("tfSubject").value = ""; $("tfDetails").value = ""; $("tfCategory").selectedIndex = 0;
+    $("tfMsg").textContent = `Ticket #${r.ticket.no} submitted. Thank you!`; $("tfMsg").className = "ok";
+    setTimeout(closeTicketForm, 1600);
+    if (currentView === "tickets") openTickets();
+  } catch (err) {
+    $("tfSubmit").disabled = false;
+    if (!["signed out", "no access"].includes(err.message)) { $("tfMsg").textContent = err.message; $("tfMsg").className = "err"; }
+  }
+};
+async function openTickets() {
+  closeKpi();
+  showView("tickets");
+  $("tkBody").innerHTML = `<tr><td class="empty" colspan="8">Loading…</td></tr>`;
+  try {
+    tk.rows = (await api("/api/mongo", { dataset: "tickets" })).tickets || [];
+    renderTickets();
+  } catch (e) {
+    if (!["signed out", "no access"].includes(e.message)) $("tkBody").innerHTML = `<tr><td class="empty" colspan="8">${esc(e.message)}</td></tr>`;
+  }
+}
+function renderTickets() {
+  const q = $("tkSearch").value.trim().toLowerCase();
+  const rows = tk.rows.filter((t) => !q || [t.subject, t.details, t.category, t.createdBy, t.createdByName, t.page, t.company, t.status]
+    .some((v) => String(v || "").toLowerCase().includes(q)));
+  const open = tk.rows.filter((t) => t.status !== "Closed").length;
+  $("tkCount").textContent = `${plural(tk.rows.length, "ticket", "tickets")} · ${fmtInt(open)} not closed`;
+  $("tkBody").innerHTML = rows.length ? rows.map((t) => `<tr data-no="${t.no}"><td>${t.no}</td>
+      <td class="muted">${fmtSignIn(t.createdAt)}</td>
+      <td>${esc(t.createdByName || "")}<div class="muted">${esc(t.createdBy || "")}</div></td>
+      <td>${esc(t.category || "")}</td><td><b>${esc(t.subject || "")}</b></td>
+      <td class="tk-det">${esc(t.details || "")}</td>
+      <td class="muted">${esc([t.page, t.company].filter(Boolean).join(" · ") || "—")}</td>
+      <td><select data-act="tkStatus">${TK_STATUSES.map((v) => `<option${v === (t.status || "Open") ? " selected" : ""}>${v}</option>`).join("")}</select></td></tr>`).join("")
+    : `<tr><td class="empty" colspan="8">${tk.rows.length ? "No tickets match." : "No tickets yet."}</td></tr>`;
+}
+$("tkSearch").oninput = renderTickets;
+$("tkBody").addEventListener("change", async (e) => {
+  const tr = e.target.closest("tr[data-no]");
+  if (!tr || e.target.dataset.act !== "tkStatus") return;
+  const t = tk.rows.find((x) => x.no === Number(tr.dataset.no)), was = t.status || "Open";
+  e.target.disabled = true;
+  try {
+    await api("/api/mongo", { dataset: "saveTicket", no: t.no, status: e.target.value });
+    t.status = e.target.value;
+    renderTickets();
+  } catch (err) {
+    e.target.value = was; e.target.disabled = false;
+    if (!["signed out", "no access"].includes(err.message)) alert(err.message);
+  }
+});
 // Operations / Finance / Status open and close like System (the open report stays visible)
 document.querySelectorAll(".nav-sec > .nav-toggle").forEach((b) => {
   b.onclick = () => { const c = b.parentElement.classList.toggle("collapsed"); b.setAttribute("aria-expanded", String(!c)); };

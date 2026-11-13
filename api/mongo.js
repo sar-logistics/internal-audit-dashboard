@@ -10,11 +10,17 @@
 //                                                                                   lob "*" = every LOB's rows)
 //   POST /api/mongo  { dataset: "saveChecklist", company, lob, month, item, week, status, completedOn, remarks } -> { row }
 //                                                                                   (Admin, Strategy or Internal Audit)
+//   POST /api/mongo  { dataset: "submitTicket", category, subject, details, page, company } -> { ticket }  (signed in)
+//   POST /api/mongo  { dataset: "tickets" }                        -> { tickets }  (admin)
+//   POST /api/mongo  { dataset: "saveTicket", no, status }         -> { ok }       (admin)
 //
 // Audit checklist: collection "checklist" of sar-internal-audit, one document per company, month and
 // audit point { company, lob, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. lob is an
 // LOB name as the reports show it (e.g. "Sea Export"); the Status page now saves with lob "" (one status per
 // company). week is 0 for the monthly view; the weekly view keeps one document per ISO week of the month, 1–6.
+//
+// Tickets: collection "tickets" of sar-internal-audit { no, category, subject, details, page, company, status,
+// createdBy, createdByName, createdAt, updatedBy, updatedAt }; no counts up from 1.
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
 // per person { email, name, role: "Admin" | "Strategy" | "Internal Audit" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
@@ -221,6 +227,40 @@ async function checklist(me, body) {
   return { row };
 }
 
+// ============================================================ tickets
+const TICKET_CATEGORIES = ["Data issue", "Bug", "Access", "Feature request", "Other"];
+const TICKET_STATUSES = ["Open", "In Progress", "Closed"];
+const ticketsCol = async () => (await connectDb(["AUDIT_URI"], AUDIT_DB)).collection("tickets");
+
+async function tickets(me, body) {
+  const col = await ticketsCol();
+  if (body.dataset === "submitTicket") {
+    const subject = String(body.subject || "").trim().slice(0, 200);
+    const details = String(body.details || "").trim().slice(0, 4000);
+    if (!subject) throw new HttpError(400, "Add a subject.");
+    if (!details) throw new HttpError(400, "Describe the issue.");
+    const last = await col.find({}, { projection: { _id: 0, no: 1 } }).sort({ no: -1 }).limit(1).toArray();
+    const now = new Date();
+    const ticket = {
+      no: ((last[0] && last[0].no) || 0) + 1,
+      category: TICKET_CATEGORIES.includes(body.category) ? body.category : "Other",
+      subject, details,
+      page: String(body.page || "").slice(0, 100), company: String(body.company || "").slice(0, 40),
+      status: "Open", createdBy: me.email, createdByName: me.name || me.email, createdAt: now, updatedAt: now,
+    };
+    await col.insertOne({ ...ticket });
+    return { ticket };
+  }
+  if (me.role !== "admin") throw new HttpError(403, "Only an Admin can see and update tickets.");
+  if (body.dataset === "tickets") return { tickets: await col.find({}, { projection: { _id: 0 } }).sort({ no: -1 }).limit(1000).toArray() };
+  const no = Number(body.no);
+  if (!Number.isInteger(no) || no < 1) throw new HttpError(400, "Unknown ticket.");
+  if (!TICKET_STATUSES.includes(body.status)) throw new HttpError(400, "Unknown status.");
+  const r = await col.updateOne({ no }, { $set: { status: body.status, updatedBy: me.email, updatedAt: new Date() } });
+  if (!r.matchedCount) throw new HttpError(404, "Ticket not found.");
+  return { ok: true };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method === "GET" && req.query && req.query.config) return res.status(200).json({ googleClientId: GOOGLE_CLIENT_ID });
@@ -243,6 +283,10 @@ export default async function handler(req, res) {
     if (["checklist", "saveChecklist"].includes(body.dataset)) {
       if (!process.env.AUDIT_URI) throw new HttpError(500, "AUDIT_URI is not set: the checklist needs it.");
       return res.status(200).json(await checklist(me, body));
+    }
+    if (["submitTicket", "tickets", "saveTicket"].includes(body.dataset)) {
+      if (!process.env.AUDIT_URI) throw new HttpError(500, "AUDIT_URI is not set: tickets need it.");
+      return res.status(200).json(await tickets(me, body));
     }
     throw new HttpError(400, "Unknown request");
   } catch (err) {
