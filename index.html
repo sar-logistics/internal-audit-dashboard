@@ -83,14 +83,7 @@
   .acct-wrap { position: relative; }
   .acct-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; min-width: 240px; padding: 14px 16px; background: var(--card);
                border: 1px solid var(--line); border-top: 3px solid #1F3A6E; border-radius: 10px; box-shadow: 0 10px 28px rgba(15,25,45,0.18); }
-  .acct-menu .account { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
   .btn-menu[aria-expanded="true"], .btn-menu:hover { background: #E5EDF7; border-color: #2D5A8E; color: #1F3A6E; }
-  .data-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .acct-item { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line);
-               border-radius: 8px; background: var(--paper); font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
-  .acct-item:hover { border-color: #2D5A8E; background: #E5EDF7; color: #1F3A6E; }
-  .acct-signout { color: var(--coral); }
-  .acct-signout:hover { border-color: #F3B4AA; background: #FDECEA; color: var(--coral); }
   .tf-box { width: min(560px, 100%); }
   .tf-body { display: grid; gap: 6px; padding: 18px 20px; overflow: auto; }
   .tf-body label { font-size: 12px; font-weight: 700; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; margin-top: 8px; }
@@ -103,14 +96,6 @@
   #tfMsg.ok { color: var(--good); }
   .tk-tbl td { vertical-align: top; }
   .tk-tbl .tk-det { max-width: 360px; white-space: pre-wrap; word-break: break-word; }
-  .data-pill { display: flex; align-items: center; gap: 6px; background: #E8F7EE; color: #1F9D5A; font-size: 12px;
-               font-weight: 700; padding: 7px 13px; border-radius: 20px; white-space: nowrap; }
-  .data-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #1F9D5A; }
-  .last-sync { font-size: 11.5px; color: var(--ink-faint); }
-  .account { display: flex; align-items: center; gap: 10px; }
-  .account img, .account .initial { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
-  .account .initial { display: grid; place-items: center; background: #5B4038; color: #fff; font-size: 12px; font-weight: 700; }
-  .account b { color: var(--ink); font-size: 13.5px; }
 
   .main { flex: 1; min-width: 0; }
   .topbar { background: var(--card); border-bottom: 1px solid var(--line); padding: 16px 32px; min-height: 70px;
@@ -431,6 +416,41 @@
   .bt tr.grand td { border-bottom-color: var(--sidebar); }
   .bt tr.branch:hover { background: #F5F8FB; }
   .role-pill { background: var(--navy-100); color: #185FA5; }
+  /* hamburger menu: same as the Canada ops dashboard's user menu */
+  .acct-menu { right: 0; top: calc(100% + 6px); width: 250px; min-width: 0; padding: 0; overflow: hidden; background: #fff;
+               border: 1px solid var(--line); border-top: 1px solid var(--line); border-radius: 0 0 14px 14px;
+               box-shadow: 0 8px 28px rgba(15,31,46,0.12); transform-origin: top right; animation: udOpen .28s cubic-bezier(.34,1.56,.64,1) both; }
+  @keyframes udOpen { from { opacity: 0; transform: scaleY(.85) scaleX(.92); } to { opacity: 1; transform: none; } }
+  .acct-menu > * { animation: udItem .25s ease both; }
+  .acct-menu > .ud-head { animation-delay: .06s; }
+  .acct-menu > .ud-live { animation-delay: .11s; }
+  .acct-menu > .ud-btn { animation-delay: .15s; }
+  .acct-menu > .ud-logout { animation-delay: .19s; }
+  @keyframes udItem { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .ud-head { display: flex; align-items: center; gap: 12px; padding: 18px 16px 16px; background: var(--navy-100); }
+  .ud-avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; object-fit: cover;
+               background: linear-gradient(135deg, #3D70CC, #1F3A6E); color: #fff; font-size: 15px; font-weight: 700;
+               border: 2px solid #fff; box-shadow: 0 4px 12px rgba(61,112,204,0.35); }
+  .ud-name { font-size: 13.5px; font-weight: 600; color: var(--ink); letter-spacing: .01em; }
+  .ud-role { font-size: 10.5px; color: var(--accent); margin-top: 2px; font-weight: 500; letter-spacing: .03em; text-transform: uppercase; }
+  .ud-div { height: 1px; background: var(--line); }
+  .ud-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; font-size: 12.5px; color: var(--ink-soft); }
+  .ud-live { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .ud-live-row { display: flex; align-items: center; gap: 8px; font-weight: 500; color: var(--ink-soft); }
+  .ud-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #97C459; box-shadow: 0 0 6px rgba(151,196,89,0.6); animation: udBlink 2s infinite; }
+  @keyframes udBlink { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+  .ud-refreshed { font-size: 9.5px; color: var(--ink-faint); padding-left: 15px; white-space: nowrap; }
+  .ud-refreshed b { font-weight: 600; color: var(--ink-soft); }
+  .ud-refreshed:empty { display: none; }
+  .ud-btn { width: 100%; text-align: left; background: none; border: 0; cursor: pointer; font: inherit; font-size: 12.5px;
+            transition: background .15s, padding-left .15s, color .15s; }
+  .ud-btn:hover { background: var(--navy-100); color: var(--ink); padding-left: 19px; }
+  .ud-item svg { width: 15px; flex-shrink: 0; color: var(--accent); }
+  .ud-logout, .ud-logout svg { color: #993C1D; }
+  .ud-logout:hover { background: #FAECE7; color: #993C1D; }
+  #acctBtn svg { transition: transform .25s cubic-bezier(.34,1.56,.64,1); }
+  #acctBtn[aria-expanded="true"] svg { transform: rotate(90deg); }
+  #acctBtn[aria-expanded="true"] { background: var(--navy-100); border-color: #B5D4F4; color: var(--sidebar); }
 </style>
 </head>
 <body>
@@ -539,20 +559,26 @@
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
           </button>
           <div class="acct-menu hidden" id="acctMenu">
-            <div class="account">
-              <img id="meAvatar" alt="" class="hidden">
-              <span class="initial" id="meInitial"></span>
-              <b id="meName"></b>
+            <div class="ud-head">
+              <img id="meAvatar" alt="" class="ud-avatar hidden">
+              <span class="ud-avatar" id="meInitial"></span>
+              <div>
+                <div class="ud-name" id="meName"></div>
+                <div class="ud-role" id="meRole"></div>
+              </div>
             </div>
-            <div class="data-row">
-              <span class="data-pill"><span class="dot"></span>Live Data</span>
-              <span class="last-sync" id="caUpdated"></span>
+            <div class="ud-div"></div>
+            <div class="ud-item ud-live">
+              <div class="ud-live-row"><span class="ud-live-dot"></span>Live Data Connected</div>
+              <div class="ud-refreshed" id="caUpdated"></div>
             </div>
-            <button type="button" class="acct-item" id="ticketOpen">
+            <div class="ud-div"></div>
+            <button type="button" class="ud-item ud-btn" id="ticketOpen">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M1.5 4.5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1V6a2 2 0 0 0 0 4v1.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1V10a2 2 0 0 0 0-4z"/><path d="M10 3.5v9" stroke-dasharray="1.5 1.5"/></svg>
               Submit a ticket
             </button>
-            <button type="button" class="acct-item acct-signout" id="signOut">
+            <div class="ud-div"></div>
+            <button type="button" class="ud-item ud-btn ud-logout" id="signOut">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
               Sign out
             </button>
@@ -781,6 +807,7 @@ async function start() {
   catch (e) { if (!["signed out", "no access"].includes(e.message)) showLogin("Couldn't sign in: " + e.message); return; }
   finally { $("loginBusy").classList.add("hidden"); }
   $("meName").textContent = me.name;
+  $("meRole").textContent = ROLE_NAMES.find((r) => r.toLowerCase() === me.role) || "Viewer";
   $("greeting").textContent = `Hello ${String(me.name).split(" ")[0]} - ${ROLE_NAMES.find((r) => r.toLowerCase() === me.role) || "Viewer"}`;
   $("meAvatar").src = me.picture || "";
   $("meAvatar").classList.toggle("hidden", !me.picture);
@@ -838,7 +865,7 @@ const fmtWhen = (iso) => {
 function showLoaded(k) {
   setBranchData(k ? k.jobs : null, k ? k.evaJobs : null);
   const pushed = k ? [k.dataRefreshedAt?.jobs, k.dataRefreshedAt?.estimatedVsActual].filter(Boolean).sort().pop() : "";
-  $("caUpdated").textContent = pushed ? `Last refreshed: ${fmtWhen(pushed)}` : "";
+  $("caUpdated").innerHTML = pushed ? `Refreshed at: <b>${fmtWhen(pushed)}</b>` : "";
 }
 
 async function loadCompany(refresh) {
