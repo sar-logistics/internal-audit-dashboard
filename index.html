@@ -56,14 +56,13 @@
   #app.sb-min .sb-toggle { margin: 0; }
   #app.sb-min .sb-toggle svg { transform: rotate(180deg); }
   #app.sb-min .brand-sub, #app.sb-min .greeting, #app.sb-min .nav-label, #app.sb-min .nav-item span,
-  #app.sb-min .data-row, #app.sb-min .account b { display: none; }
+  #app.sb-min .nav-sys { padding-bottom: 14px; }
   #app.sb-min .nav { padding: 12px 10px; }
   #app.sb-min .nav-item { justify-content: center; padding: 11px 0; }
   #app.sb-min .nav-sys.collapsed .nav-item, #app.sb-min .nav-sec.collapsed .nav-item { display: flex; }
   #app.sb-min .nav-group svg { display: none; }   /* icons stay reachable when the menu is narrow */
   #app.sb-min .nav-group { display: block; font-size: 0; padding: 0; margin: 8px 4px; }   /* divider only */
   #app.sb-min .nav-item.active::before { left: -10px; }
-  #app.sb-min .sidebar-foot { padding: 14px 0 18px; display: flex; justify-content: center; }
   .sb-backdrop { display: none; }
   .brand { padding: 22px 18px 18px 22px; display: flex; align-items: center; gap: 10px; min-height: 70px; }
   .brand img { height: 34px; display: block; }
@@ -81,16 +80,21 @@
   .nav-item.active::before { content: ""; position: absolute; left: -12px; top: 8px; bottom: 8px; width: 3px;
                              border-radius: 0 3px 3px 0; background: #fff; }
   .nav-item svg { flex-shrink: 0; }
-  .sidebar-foot { margin-top: auto; padding: 16px 24px 22px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 11.5px; color: #8CA0C4; }
-  .data-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .sidebar > .nav-sys { margin-top: auto; padding-bottom: 18px; }   /* System sits at the very bottom */
+  .acct-wrap { position: relative; }
+  .acct-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; min-width: 240px; padding: 14px 16px; background: var(--card);
+               border: 1px solid var(--line); border-top: 3px solid #2C4E82; border-radius: 10px; box-shadow: 0 10px 28px rgba(15,25,45,0.18); }
+  .acct-menu .account { padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .btn-menu[aria-expanded="true"], .btn-menu:hover { background: #EEF3FC; border-color: #6488D6; color: #2C4E82; }
+  .data-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .data-pill { display: flex; align-items: center; gap: 6px; background: #E8F7EE; color: #1F9D5A; font-size: 12px;
                font-weight: 700; padding: 7px 13px; border-radius: 20px; white-space: nowrap; }
   .data-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: #1F9D5A; }
-  .last-sync { font-size: 10.5px; color: #7C90B4; }
+  .last-sync { font-size: 11.5px; color: var(--ink-faint); }
   .account { display: flex; align-items: center; gap: 10px; }
   .account img, .account .initial { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; }
   .account .initial { display: grid; place-items: center; background: #5B4038; color: #fff; font-size: 12px; font-weight: 700; }
-  .account b { color: #fff; font-size: 12.5px; }
+  .account b { color: var(--ink); font-size: 13.5px; }
 
   .main { flex: 1; min-width: 0; }
   .topbar { background: var(--card); border-bottom: 1px solid var(--line); padding: 16px 32px; min-height: 70px;
@@ -228,8 +232,6 @@
     .nav-label { padding: 4px 12px; }
     .nav-item, #app.sb-min .nav-item { padding-top: 6px; padding-bottom: 6px; }
     .nav-sys, .nav-group { margin-top: 4px; padding-top: 6px; }
-    .sidebar-foot { padding: 10px 24px 14px; }
-    .data-row { margin-bottom: 8px; }
   }
   @media (max-height: 700px) {
     .brand { padding: 10px 18px 8px 22px; min-height: 48px; }
@@ -238,11 +240,9 @@
     .nav-label { padding: 2px 12px; }
     .nav-item, #app.sb-min .nav-item { padding-top: 4px; padding-bottom: 4px; }
     .nav-sys, .nav-group { margin-top: 2px; padding-top: 4px; }
-    .sidebar-foot { padding: 8px 24px 10px; }
-    .data-row { margin-bottom: 6px; }
   }
   @media (max-height: 600px) {   /* very short windows: drop the greeting and the data line, keep every menu item */
-    .greeting, .data-row { display: none; }
+    .greeting { display: none; }
     .nav-item, #app.sb-min .nav-item { padding-top: 3px; padding-bottom: 3px; }
   }
   /* Status: monthly audit checklist */
@@ -439,17 +439,6 @@
         <span>Tickets</span>
       </div>
     </nav>
-    <div class="sidebar-foot">
-      <div class="data-row">
-        <span class="data-pill"><span class="dot"></span>Live Data</span>
-        <span class="last-sync" id="caUpdated"></span>
-      </div>
-      <div class="account">
-        <img id="meAvatar" alt="" class="hidden">
-        <span class="initial" id="meInitial"></span>
-        <b id="meName"></b>
-      </div>
-    </div>
   </aside>
   <div class="sb-backdrop" id="sbBackdrop"></div>
 
@@ -485,6 +474,22 @@
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 8V3.5M13.5 8H9"/></svg>
           Refresh data
         </button>
+        <div class="acct-wrap">
+          <button class="btn-signout btn-menu" id="acctBtn" type="button" aria-label="Account" title="Account" aria-haspopup="true" aria-expanded="false">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
+          </button>
+          <div class="acct-menu hidden" id="acctMenu">
+            <div class="account">
+              <img id="meAvatar" alt="" class="hidden">
+              <span class="initial" id="meInitial"></span>
+              <b id="meName"></b>
+            </div>
+            <div class="data-row">
+              <span class="data-pill"><span class="dot"></span>Live Data</span>
+              <span class="last-sync" id="caUpdated"></span>
+            </div>
+          </div>
+        </div>
         <button class="btn-signout" id="signOut" type="button" aria-label="Sign out" title="Sign out">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
         </button>
@@ -1829,6 +1834,11 @@ document.addEventListener("keydown", (e) => {
 addEventListener("resize", closeDropdown);
 addEventListener("scroll", (e) => { if (!e.target.closest?.("#ddPop") && e.target !== $("ddPop")) closeDropdown(); }, true);
 
+// Account menu (hamburger): who is signed in and when the data was last refreshed
+const acctOpen = (on) => { $("acctMenu").classList.toggle("hidden", !on); $("acctBtn").setAttribute("aria-expanded", String(on)); };
+$("acctBtn").onclick = () => acctOpen($("acctMenu").classList.contains("hidden"));
+document.addEventListener("click", (e) => { if (!e.target.closest(".acct-wrap")) acctOpen(false); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") acctOpen(false); });
 $("signOut").onclick = () => { try { google.accounts.id.disableAutoSelect(); } catch {} showLogin(); };
 
 (async () => {
