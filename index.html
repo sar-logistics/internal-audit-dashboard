@@ -59,7 +59,8 @@
   #app.sb-min .data-row, #app.sb-min .account b { display: none; }
   #app.sb-min .nav { padding: 12px 10px; }
   #app.sb-min .nav-item { justify-content: center; padding: 11px 0; }
-  #app.sb-min .nav-sys.collapsed .nav-item { display: flex; }   /* icons stay reachable when the menu is narrow */
+  #app.sb-min .nav-sys.collapsed .nav-item, #app.sb-min .nav-sec.collapsed .nav-item { display: flex; }
+  #app.sb-min .nav-group svg { display: none; }   /* icons stay reachable when the menu is narrow */
   #app.sb-min .nav-group { display: block; font-size: 0; padding: 0; margin: 8px 4px; }   /* divider only */
   #app.sb-min .nav-item.active::before { left: -10px; }
   #app.sb-min .sidebar-foot { padding: 14px 0 18px; display: flex; justify-content: center; }
@@ -217,8 +218,8 @@
   .nav-toggle { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; cursor: pointer; font-family: inherit; text-align: left; }
   .nav-toggle:hover { color: #fff; }
   .nav-toggle svg { transition: transform .15s ease; }
-  .nav-sys.collapsed .nav-toggle svg { transform: rotate(-90deg); }
-  .nav-sys.collapsed .nav-item:not(.active) { display: none; }
+  .nav-sys.collapsed .nav-toggle svg, .nav-sec.collapsed .nav-toggle svg { transform: rotate(-90deg); }
+  .nav-sys.collapsed .nav-item:not(.active), .nav-sec.collapsed .nav-item:not(.active) { display: none; }
   .nav-sys { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
   @media (max-height: 920px) {   /* laptop screens: tighter menu so every report shows without scrolling */
     .brand { padding: 14px 18px 12px 22px; min-height: 56px; }
@@ -377,7 +378,10 @@
     </div>
     <div class="greeting" id="greeting"></div>
     <nav class="nav" id="btReports">
-      <div class="nav-label">Operations</div>
+      <div class="nav-sec">
+      <button type="button" class="nav-label nav-toggle" aria-expanded="true">Operations
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
+      </button>
       <div class="nav-item active" data-report="total" title="Total Jobs Created">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><path d="M5.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M1.5 8.5h13"/></svg>
         <span>Total Jobs Created</span>
@@ -394,15 +398,24 @@
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8v4c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V8"/></svg>
         <span>Cost Not Posted</span>
       </div>
-      <div class="nav-label nav-group">Finance</div>
+      </div>
+      <div class="nav-sec">
+      <button type="button" class="nav-label nav-toggle nav-group" aria-expanded="true">Finance
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
+      </button>
       <div class="nav-item" data-report="fin" title="Finance Pendency">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2M8 10v1.5"/></svg>
         <span>Finance Pendency</span>
       </div>
-      <div class="nav-label nav-group">Status</div>
+      </div>
+      <div class="nav-sec">
+      <button type="button" class="nav-label nav-toggle nav-group" aria-expanded="true">Status
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
+      </button>
       <div class="nav-item" data-sys="status" title="Status">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 8h3l1.5-4 3 8 1.5-4h4"/></svg>
         <span>Status</span>
+      </div>
       </div>
     </nav>
     <nav class="nav nav-sys hidden" id="sysNav">
@@ -1699,6 +1712,10 @@ $("sysNav").addEventListener("click", (e) => {
   if (b.dataset.sys === "usage") openUsage(); else { closeKpi(); showView(b.dataset.sys); }
 });
 $("useSearch").oninput = renderUsage;
+// Operations / Finance / Status open and close like System (the open report stays visible)
+document.querySelectorAll(".nav-sec > .nav-toggle").forEach((b) => {
+  b.onclick = () => { const c = b.parentElement.classList.toggle("collapsed"); b.setAttribute("aria-expanded", String(!c)); };
+});
 $("sysToggle").onclick = () => { const c = $("sysNav").classList.toggle("collapsed"); $("sysToggle").setAttribute("aria-expanded", String(!c)); };
 $("admSearch").oninput = renderUsers;
 $("admAdd").onsubmit = async (e) => {
