@@ -565,7 +565,7 @@
         <form class="adm-add" id="admAdd" autocomplete="off">
           <input type="email" id="admEmail" placeholder="name@sarlogisolutions.com or @sartransport.com" required aria-label="Email">
           <input type="text" id="admName" placeholder="Full name" aria-label="Name">
-          <select id="admRole" aria-label="Role"><option>Viewer</option><option>Strategy</option><option>Admin</option></select>
+          <select id="admRole" aria-label="Role"><option>Viewer</option><option>Strategy</option><option>Internal Audit</option><option>Admin</option></select>
           <button class="btn-primary" type="submit">Add user</button>
           <span id="admMsg"></span>
         </form>
@@ -1464,7 +1464,7 @@ $("companyTabs").onclick = (e) => {
 // ============================================================ admin panel
 // Users who may sign in: the users collection of sar-internal-audit, managed through api/mongo.js.
 const adm = { users: [], breakGlass: [] };
-const ROLE_NAMES = ["Viewer", "Strategy", "Admin"];   // Strategy sees the same data as Viewer for now
+const ROLE_NAMES = ["Viewer", "Strategy", "Internal Audit", "Admin"];   // Strategy and Internal Audit see the same data as Viewer, and can update Status
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
 // "status" is the monthly audit checklist of the selected company; "usage" shows sign-in counts per user;
@@ -1565,7 +1565,7 @@ const CK_OLD = { Completed: "Done", "In Progress": "WIP" };
 const ck = { rows: {}, company: "" };   // "item|month|week" -> saved row
 const ckKey = (item, month, week) => `${item}|${month}|${week || 0}`;
 const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
-const ckCanEdit = () => ["admin", "strategy"].includes(me && me.role);
+const ckCanEdit = () => ["admin", "strategy", "internal audit"].includes(me && me.role);
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const CK_MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const ckLabel = (m) => `${CK_MON[Number(m.slice(5)) - 1]}'${m.slice(2, 4)}`;   // January'26

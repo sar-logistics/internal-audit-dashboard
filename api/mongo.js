@@ -9,7 +9,7 @@
 //                                                                                   every month when left out;
 //                                                                                   lob "*" = every LOB's rows)
 //   POST /api/mongo  { dataset: "saveChecklist", company, lob, month, item, week, status, completedOn, remarks } -> { row }
-//                                                                                   (Admin or Strategy)
+//                                                                                   (Admin, Strategy or Internal Audit)
 //
 // Audit checklist: collection "checklist" of sar-internal-audit, one document per company, month and
 // audit point { company, lob, month, item, week, status, completedOn, remarks, updatedBy, updatedAt }. lob is an
@@ -17,7 +17,7 @@
 // company). week is 0 for the monthly view; the weekly view keeps one document per ISO week of the month, 1–6.
 //
 // Who can sign in: the "users" collection of database sar-internal-audit (env AUDIT_URI), one document
-// per person { email, name, role: "Admin" | "Strategy" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
+// per person { email, name, role: "Admin" | "Strategy" | "Internal Audit" | "Viewer", active }; each sign-in sets lastLoginAt and adds 1 to loginCount. Only active users on the list get in.
 // ADMIN_EMAILS always get in as Admin, so the list can't lock everyone out. Without AUDIT_URI the
 // old rule applies: anyone on an allowed domain is a Viewer.
 // The browser signs in with Google (OAuth client in Google Cloud project sar-group-internal-audit)
@@ -99,11 +99,12 @@ async function listedUser(email) {
   return doc;
 }
 
-// Roles as stored in the list. Strategy and Viewer see the same data for now; only Admins manage users.
-const ROLES = ["Admin", "Strategy", "Viewer"];
+// Roles as stored in the list. Strategy, Internal Audit and Viewer see the same data for now; Strategy and
+// Internal Audit can also update the Status checklist; only Admins manage users.
+const ROLES = ["Admin", "Strategy", "Internal Audit", "Viewer"];
 const roleName = (v) => ROLES.find((r) => r.toLowerCase() === String(v || "").trim().toLowerCase()) || "Viewer";
 
-/** "admin" | "strategy" | "viewer" | null (no access). */
+/** "admin" | "strategy" | "internal audit" | "viewer" | null (no access). */
 export async function roleFor(email) {
   const e = email.toLowerCase();
   if (isAdminEmail(e)) return "admin";
@@ -199,7 +200,7 @@ async function checklist(me, body) {
   const projection = { _id: 0, lob: 1, month: 1, item: 1, week: 1, status: 1, completedOn: 1, remarks: 1, updatedBy: 1, updatedAt: 1 };
   if (body.dataset === "checklist") return { rows: await col.find(month ? { company, lob: lobQuery, month } : { company, lob: lobQuery }, { projection }).toArray() };
 
-  if (!["admin", "strategy"].includes(me.role)) throw new HttpError(403, "Only Admin and Strategy users can update the checklist.");
+  if (!["admin", "strategy", "internal audit"].includes(me.role)) throw new HttpError(403, "Only Admin, Strategy and Internal Audit users can update the checklist.");
   const item = Number(body.item);
   if (!Number.isInteger(item) || item < 1 || item > 500) throw new HttpError(400, "Unknown audit point.");
   const week = Number(body.week) || 0;
