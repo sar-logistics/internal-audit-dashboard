@@ -1573,6 +1573,7 @@ const ck = { rows: {}, company: "" };   // "item|month|week" -> saved row
 const ckKey = (item, month, week) => `${item}|${month}|${week || 0}`;
 const ckCompany = () => document.querySelector("#companyTabs button.on")?.dataset.co || "STSPL";
 const ckCanEdit = () => ["admin", "strategy", "internal audit"].includes(me && me.role);
+const ckDoneLocked = () => (me && me.role) === "internal audit";   // Internal Audit can't change an item once it is Done
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const CK_MON = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const ckLabel = (m) => `${CK_MON[Number(m.slice(5)) - 1]}'${m.slice(2, 4)}`;   // January'26
@@ -1633,7 +1634,8 @@ const ckStatus = (item, c) => ckNorm(ck.rows[ckKey(item, c.month, c.week)]);
 
 function renderChecklist() {
   if ($("ckFrom").value > $("ckTo").value) $("ckTo").value = $("ckFrom").value;
-  const cols = ckCols(), pts = ckPoints(), dis = ckCanEdit() ? "" : "disabled", weekly = $("ckView").value === "week";
+  const cols = ckCols(), pts = ckPoints(), weekly = $("ckView").value === "week";
+  const dis = (st) => ckCanEdit() && !(st === "Done" && ckDoneLocked()) ? "" : "disabled";
   const done = (p, c) => ckStatus(p.sr, c) === "Done";
   const total = pts.reduce((a, p) => a + cols.filter((c) => done(p, c)).length, 0);
   $("ckCount").textContent = `${fmtInt(total)} of ${fmtInt(pts.length * cols.length)} items done`;
@@ -1652,13 +1654,14 @@ function renderChecklist() {
   });
   const tip = (item, c) => {
     const x = ck.rows[ckKey(item, c.month, c.week)];
-    return x && x.updatedAt ? ` title="${esc(`${ckNorm(x) || "—"} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}`)}"` : "";
+    const lock = ckNorm(x) === "Done" && ckDoneLocked() ? "\nDone is final: ask an Admin or Strategy user to change it" : "";
+    return x && x.updatedAt ? ` title="${esc(`${ckNorm(x) || "—"} · ${fmtSignIn(x.updatedAt)} · ${String(x.updatedBy || "").split("@")[0]}${lock}`)}"` : "";
   };
   let html = `<tr class="grand"><td>Items Done</td>`
     + cols.map((c) => `<td>${pts.filter((p) => done(p, c)).length} / ${pts.length}</td>`).join("") + "</tr>";
   html += pts.map((p, i) => `<tr data-item="${p.sr}"><td><span class="ck-sr">${i + 1}</span>${esc(p.name)}</td>`
     + cols.map((c) => { const st = ckStatus(p.sr, c);
-        return `<td data-month="${c.month}" data-week="${c.week}"${tip(p.sr, c)}><select class="ck-st" data-st="${st}" ${dis} aria-label="${esc(p.name)} ${ckColLabel(c)}">`
+        return `<td data-month="${c.month}" data-week="${c.week}"${tip(p.sr, c)}><select class="ck-st" data-st="${st}" ${dis(st)} aria-label="${esc(p.name)} ${ckColLabel(c)}">`
           + `<option value=""${st ? "" : " selected"}>—</option>${CK_STATUSES.map((v) => `<option${v === st ? " selected" : ""}>${v}</option>`).join("")}</select></td>`; }).join("")
     + "</tr>").join("");
   $("ckBody").innerHTML = html;
@@ -1670,6 +1673,10 @@ $("ckBody").addEventListener("change", async (e) => {
   if (!td || !tr || !ckCanEdit()) return;
   const company = ckCompany(), month = td.dataset.month, week = Number(td.dataset.week) || 0, item = Number(tr.dataset.item), st = e.target.value;
   const key = ckKey(item, month, week), old = ck.rows[key] || {}, was = ckNorm(old);
+  if (st === "Done" && ckDoneLocked() && !confirm(`Mark "${AUDIT_POINTS.find((p) => p.sr === item)?.name}" as Done?\n\nOnce it is Done you can't change it; only an Admin or Strategy user can.`)) {
+    e.target.value = was;
+    return;
+  }
   e.target.dataset.st = st;
   td.classList.add("saving"); td.classList.remove("ck-err");
   try {

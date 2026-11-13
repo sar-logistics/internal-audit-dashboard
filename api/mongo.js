@@ -100,7 +100,8 @@ async function listedUser(email) {
 }
 
 // Roles as stored in the list. Strategy, Internal Audit and Viewer see the same data for now; Strategy and
-// Internal Audit can also update the Status checklist; only Admins manage users.
+// Internal Audit can also update the Status checklist (Internal Audit can't change an item once it is Done);
+// only Admins manage users.
 const ROLES = ["Admin", "Strategy", "Internal Audit", "Viewer"];
 const roleName = (v) => ROLES.find((r) => r.toLowerCase() === String(v || "").trim().toLowerCase()) || "Viewer";
 
@@ -209,7 +210,14 @@ async function checklist(me, body) {
   const completedOn = /^\d{4}-\d{2}-\d{2}$/.test(String(body.completedOn || "")) ? body.completedOn : "";
   const remarks = String(body.remarks || "").trim().slice(0, 1000);
   const row = { item, week, status, completedOn, remarks, updatedBy: me.email, updatedAt: new Date() };
-  await col.updateOne({ company, lob: lobQuery, month, item, week: week || { $in: [0, null] } }, { $set: { company, lob, month, ...row } }, { upsert: true });
+  const filter = { company, lob: lobQuery, month, item, week: week || { $in: [0, null] } };
+  // Done is final for Internal Audit users: only Admin or Strategy can change an item once it is Done
+  if (me.role === "internal audit") {
+    const cur = await col.findOne(filter, { projection: { _id: 0, status: 1 } });
+    if (cur && ["Done", "Completed"].includes(cur.status) && status !== cur.status)
+      throw new HttpError(403, "This item is already Done. Ask an Admin or Strategy user to change it.");
+  }
+  await col.updateOne(filter, { $set: { company, lob, month, ...row } }, { upsert: true });
   return { row };
 }
 
