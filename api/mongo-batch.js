@@ -48,7 +48,7 @@
 //   import jobs that don't carry it, the revenue + WIP of its th_ops_wip lines. Total Expense likewise: the job's
 //   own total or its lines' cost + accrual, sent as a positive amount (stored negative; income − expense = profit).
 //   Sent as gpIncome / gpExpense / gpProfit.
-// Job Profitability (SAR USA, usa_ops_jobs): financial lock done → income = Billed Revenue (C), expense = Posted
+// Job Profitability (SAR USA, usa_ops_jobs; SAR Canada, ca_ops_* — same fields without the letter): financial lock done → income = Billed Revenue (C), expense = Posted
 //   Cost (G); not done → income = max(Provisional Revenue A, Unbilled Revenue D), expense = max(Provisional Cost E,
 //   Unposted Cost H). Profit = income − expense; gpBasis says which one was used.
 // Financial Lock Pending: Indonesia / Thailand = job status is not CLS; the others = no financial lock date.
@@ -148,9 +148,9 @@ async function canadaJobs(db) {
   const perCollection = await Promise.all(CA_JOB_COLLECTIONS.map((name) => db.collection(name)
     .find({}, { projection: { _id: 0, financialLockDate: 1, financialLock: 1, operationLockDate: 1, operationLock: 1, syncedAt: 1,
                               shipmentId: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1, jobOwner: 1,
-                              periodDate: 1, jobDate: 1, isOpen: 1 } })
+                              periodDate: 1, jobDate: 1, isOpen: 1, ...gpProjection(CA_GP_FIELDS) } })
     .toArray().then((docs) => docs.map((d) => ({ ...d, _col: name })))));
-  const out = { fields: JOB_FIELDS, rows: [], syncedAt: "" };
+  const out = { fields: [...JOB_FIELDS, "gpIncome", "gpProfit", "gpExpense", "gpBasis"], rows: [], syncedAt: "" };
   for (const d of perCollection.flat()) {
     if (d.syncedAt && String(d.syncedAt) > out.syncedAt) out.syncedAt = String(d.syncedAt);
     const [colDir, colLob] = CA_COLLECTION_LOB[d._col];
@@ -159,7 +159,7 @@ async function canadaJobs(db) {
       d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
       d.periodDate || d.jobDate || "",
       d.isOpen !== undefined ? !!d.isOpen : !filled(d.operationLockDate),
-      finPendingOf(d), opsPendingOf(d),
+      finPendingOf(d), opsPendingOf(d), ...usaGp(d, CA_GP_FIELDS),
     ]);
   }
   return out;
@@ -226,13 +226,19 @@ async function usaJobs(db, cfg) {
     ];
   }) };
 }
-const USA_GP_PROJECTION = { billedRevenueC: 1, postedCostG: 1, provisionalRevenueA: 1, "unbilledRevenueD=aC": 1,
-                            provisionalCostE: 1, "unpostedCostH=EG": 1 };
+// The GP% fields: A provisional revenue, C billed revenue, D unbilled revenue, E provisional cost, G posted cost,
+// H unposted cost
+const USA_GP_FIELDS = { A: "provisionalRevenueA", C: "billedRevenueC", D: "unbilledRevenueD=aC", E: "provisionalCostE",
+                        G: "postedCostG", H: "unpostedCostH=EG" };
+const CA_GP_FIELDS = { A: "provisionalRevenue", C: "billedRevenue", D: "unbilledRevenue", E: "provisionalCost",
+                       G: "postedCost", H: "unpostedCost" };
+const gpProjection = (f) => Object.fromEntries(Object.values(f).map((k) => [k, 1]));
+const USA_GP_PROJECTION = gpProjection(USA_GP_FIELDS);
 // [income, profit, expense, basis] for the GP% reports
-function usaGp(d) {
+function usaGp(d, f = USA_GP_FIELDS) {
   const locked = !finPendingOf(d);
-  const income = locked ? toNum(d.billedRevenueC) : Math.max(toNum(d.provisionalRevenueA), toNum(d["unbilledRevenueD=aC"]));
-  const expense = locked ? toNum(d.postedCostG) : Math.max(toNum(d.provisionalCostE), toNum(d["unpostedCostH=EG"]));
+  const income = locked ? toNum(d[f.C]) : Math.max(toNum(d[f.A]), toNum(d[f.D]));
+  const expense = locked ? toNum(d[f.G]) : Math.max(toNum(d[f.E]), toNum(d[f.H]));
   return [round2(income), round2(income - expense), round2(expense), locked ? "Billed − Posted (FL done)" : "Provisional / Unbilled (FL not done)"];
 }
 
@@ -366,7 +372,9 @@ const JOB_DETAIL_FIELDS = ["shipmentId", "etdEtaNew", "periodDate", "location", 
   "salesPerson", "customer", "cargoType", "etdLoadingPort", "etaDischarge", "jobDate", "loadingPort", "originPortCountry",
   "dischargePort", "destinationCountry", "houseNo", "consolNo", "carrierNumber", "carrier", "masterNo", "consignee", "shipper",
   "toiIncoTerms", "lob", "direction",
-  // SAR USA GP% pop-ups
+  // SAR Canada / SAR USA GP% pop-ups
+  "provisionalRevenue", "billedRevenue", "unbilledRevenue", "provisionalCost", "postedCost", "unpostedCost",
+  "provisionalProfit", "actualProfit",
   "provisionalRevenueA", "billedRevenueC", "unbilledRevenueD=aC", "provisionalCostE", "postedCostG", "unpostedCostH=EG",
   "provisionalProfitI=aE", "actualProfitJ=cG"];
 const CA_CHARGE_FIELDS = ["jobNo", "lob", "lob2", "etdEtaNew", "etdEta", "charge", "unbilledRevenue", "unpostedCost", "unbilledCost",

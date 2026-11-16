@@ -986,7 +986,7 @@ $("caRefresh").onclick = () => loadCompany(true);
 //   Cost Not Posted:    estimatedvsactual jobs whose summed unposted cost is > 0
 //   Finance Pendency:   jobs with no Financial Lock Date (finPending from api/mongo-batch.js)
 //   GP% < 3% / > 20%:   Job Profitability. GP% = Job Profit ÷ Total Income (gpProfit / gpIncome from
-//                       api/mongo-batch.js), so far for Indonesia, Thailand and SAR USA; jobs with no income are left out
+//                       api/mongo-batch.js), so far for Indonesia, Thailand, SAR USA and SAR Canada; jobs with no income are left out
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
 const AV_COLORS = ["#3F6E1E", "#1F3A6E", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
@@ -1275,7 +1275,7 @@ function renderBranchTable() {
 
   const inRange = inFilters(rep.pool);
   const flagged = inRange.filter(rep.flag);
-  // GP% is worked out only where its rule is set (Indonesia, Thailand, SAR USA so far)
+  // GP% is worked out only where its rule is set (Indonesia, Thailand, SAR USA, SAR Canada so far)
   if (rep.gp && !bt.jobs.some((r) => typeof r.gpIncome === "number")) {
     $("btCount").textContent = "";
     $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th></tr>`;
@@ -1504,14 +1504,17 @@ const ID_COLS_GP = [...colList("shipmentId:Shipment ID;gpIncome:Total Income:n;g
 DRILLS_BY_DATASET.indonesia.gpLow = DRILLS_BY_DATASET.indonesia.gpHigh = { kind: "jobs", cols: ID_COLS_GP, gp: true };
 // SAR USA: the job's provisional / billed / unbilled revenue, cost and profit columns (usa_ops_jobs), GP%, then the
 // USA job columns
-const US_COLS_GP = [ID_COLS_GP[0],
-  ...[["provisionalRevenueA", "Provisional Revenue (A)"], ["billedRevenueC", "Billed Revenue (C)"],
-      ["unbilledRevenueD=aC", "Unbilled Revenue (D = A − C)"], ["provisionalCostE", "Provisional Cost (E)"],
-      ["postedCostG", "Posted Cost (G)"], ["unpostedCostH=EG", "Unposted Cost (H = E − G)"],
-      ["provisionalProfitI=aE", "Provisional Profit (I = A − E)"], ["actualProfitJ=cG", "Actual Profit (J = C − G)"]]
-    .map(([key, label]) => ({ key, label, num: true })),
-  ID_COLS_GP.find((c) => c.pct), ...US_COLS_TOTAL_JOBS.slice(1)];
+// (SAR Canada: the same columns from ca_ops_*, whose field names have no letter)
+const GP_LABELS = ["Provisional Revenue (A)", "Billed Revenue (C)", "Unbilled Revenue (D = A − C)", "Provisional Cost (E)",
+  "Posted Cost (G)", "Unposted Cost (H = E − G)", "Provisional Profit (I = A − E)", "Actual Profit (J = C − G)"];
+const gpCols = (keys, jobCols) => [ID_COLS_GP[0], ...keys.map((key, i) => ({ key, label: GP_LABELS[i], num: true })),
+  ID_COLS_GP.find((c) => c.pct), ...jobCols.slice(1)];
+const US_COLS_GP = gpCols(["provisionalRevenueA", "billedRevenueC", "unbilledRevenueD=aC", "provisionalCostE", "postedCostG",
+  "unpostedCostH=EG", "provisionalProfitI=aE", "actualProfitJ=cG"], US_COLS_TOTAL_JOBS);
+const CA_COLS_GP = gpCols(["provisionalRevenue", "billedRevenue", "unbilledRevenue", "provisionalCost", "postedCost",
+  "unpostedCost", "provisionalProfit", "actualProfit"], COLS_TOTAL_JOBS);
 DRILLS_BY_DATASET.usa.gpLow = DRILLS_BY_DATASET.usa.gpHigh = { kind: "jobs", cols: US_COLS_GP, gp: true };
+DRILLS_BY_DATASET.canada.gpLow = DRILLS_BY_DATASET.canada.gpHigh = { kind: "jobs", cols: CA_COLS_GP, gp: true };
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
 Object.values(DRILLS_BY_DATASET).forEach((d) => { d.fin = d.open; });   // Finance Pendency pop-ups: the Open Jobs columns
 const drills = () => DRILLS_BY_DATASET[ent().dataset];
