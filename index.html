@@ -554,6 +554,26 @@
   .um-body .select { width: 100%; }
   .um-body input:disabled { background: #f8fafc; color: var(--ink-faint); }
   #umMsg { margin-right: auto; font-size: 12.5px; color: #B91C1C; }
+
+  /* Import CSV */
+  #importModal .modal-box { width: min(860px, 100%); }
+  .im-body { padding: 18px 20px; overflow: auto; display: grid; gap: 12px; }
+  .im-guide { display: flex; gap: 14px; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: #475569; line-height: 1.5; }
+  .im-guide .ap-btn { flex-shrink: 0; white-space: nowrap; }
+  .im-inputs { display: flex; align-items: center; gap: 12px; }
+  .im-file { display: inline-flex; align-items: center; border: 1px dashed #94a3b8; border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #1D4E73; cursor: pointer; background: #fff; }
+  .im-file:hover { border-color: #1D4E73; background: #f1f6fd; }
+  .im-file input { display: none; }
+  .im-or { font-size: 12px; color: #94a3b8; }
+  #imText { border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+  #imText:focus { outline: none; border-color: #2D5A8E; box-shadow: 0 0 0 3px #2D5A8E33; }
+  .im-summary { font-size: 13px; color: #475569; }
+  .im-summary b.ok { color: #3B6D11; } .im-summary b.err { color: #B91C1C; }
+  .im-prev { border: 1px solid #e2e8f0; border-radius: 10px; max-height: 300px; overflow: auto; }
+  .im-prev .ua-tbl th { cursor: default; }
+  .im-tag { font-size: 11px; font-weight: 600; border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
+  .im-tag.new { background: #ecfdf5; color: #047857; } .im-tag.upd { background: #eff6ff; color: #1d4ed8; } .im-tag.err { background: #fef2f2; color: #B91C1C; }
+  #imMsg { margin-right: auto; font-size: 12.5px; color: #B91C1C; }
 </style>
 </head>
 <body>
@@ -814,6 +834,7 @@
       <div class="ua-title"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="7" width="9" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Admin Panel</div>
       <div class="ua-bar">
         <button class="ap-btn" id="admAddBtn" type="button"><span>+</span> Add User</button>
+        <button class="ap-btn" id="admImportBtn" type="button"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 13.5h11"/></svg> Import CSV</button>
         <label class="ua-search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>
           <input id="admSearch" placeholder="Search by name, email or role…" aria-label="Search users"></label>
         <span class="ua-count" id="admCount"></span>
@@ -857,6 +878,37 @@
         <button type="submit" class="btn-refresh" id="umSave">Save</button>
       </div>
     </form>
+  </div>
+  <div class="modal hidden" id="importModal" role="dialog" aria-modal="true" aria-labelledby="imTitle">
+    <div class="modal-box im-box">
+      <div class="modal-head">
+        <h3 id="imTitle">Bulk Import Users</h3>
+        <span class="count">Upload a CSV file or paste CSV text below</span>
+        <button class="km-close" id="imClose" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="im-body">
+        <div class="im-guide">
+          <div><b>Columns:</b> Name, Email, Role, Status. Role is Admin, Strategy, Internal Audit or Viewer; Status is Active or
+            Inactive. Name, Role and Status may be blank (the email, Viewer, Active). Users already on the list are updated.</div>
+          <button type="button" class="ap-btn" id="imTemplate">Download template</button>
+        </div>
+        <div class="im-inputs">
+          <label class="im-file"><input type="file" id="imFile" accept=".csv,text/csv"><span id="imFileName">Choose a .csv file</span></label>
+          <span class="im-or">or paste</span>
+        </div>
+        <textarea id="imText" rows="5" spellcheck="false" placeholder="Name,Email,Role,Status&#10;Rahul Verma,rahul@sarlogisolutions.com,Internal Audit,Active&#10;Priya Sharma,priya@sartransport.com,Viewer,Active"></textarea>
+        <div class="im-summary" id="imSummary"></div>
+        <div class="im-prev hidden" id="imPrevWrap"><table class="ua-tbl">
+          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Check</th></tr></thead>
+          <tbody id="imPrev"></tbody>
+        </table></div>
+      </div>
+      <div class="tf-foot">
+        <span id="imMsg"></span>
+        <button type="button" class="btn-soft" id="imCancel">Cancel</button>
+        <button type="button" class="btn-refresh" id="imGo" disabled>Import</button>
+      </div>
+    </div>
   </div>
   <div class="modal hidden" id="ticketModal" role="dialog" aria-modal="true" aria-labelledby="tfTitle">
     <form class="modal-box tf-box" id="ticketForm" autocomplete="off">
@@ -2344,6 +2396,105 @@ document.querySelectorAll(".nav-sec > .nav-toggle").forEach((b) => {
 $("sysToggle").onclick = () => { const c = $("sysNav").classList.toggle("collapsed"); $("sysToggle").setAttribute("aria-expanded", String(!c)); };
 $("admSearch").oninput = renderUsers;
 $("admAddBtn").onclick = () => openUserForm(null);
+
+// Import CSV: read the file or the pasted text, show each row with what will happen (New / Update / why it's
+// skipped), then send the valid rows in one importUsers call. The server checks them again.
+const IM_DOMAINS = ["sarlogisolutions.com", "sartransport.com"];
+const im = { rows: [] };
+function parseCsv(text) {
+  const out = []; let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === "," || c === "\t" || c === ";") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); out.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); out.push(row); }
+  return out.map((r) => r.map((v) => v.trim())).filter((r) => r.some(Boolean));
+}
+function readImport() {
+  const lines = parseCsv($("imText").value);
+  im.rows = [];
+  if (lines.length) {
+    const head = lines[0].map((h) => h.toLowerCase());
+    const hasHead = head.includes("email");
+    const at = (name, fallback) => { const i = head.findIndex((h) => h.replace(/[^a-z]/g, "") === name); return hasHead ? i : fallback; };
+    const ix = { name: at("name", 0), email: at("email", 1), role: at("role", 2), status: at("status", 3) };
+    const known = new Set(adm.users.map((u) => String(u.email).toLowerCase()));
+    const seen = new Map();
+    (hasHead ? lines.slice(1) : lines).forEach((l) => {
+      const get = (k) => ix[k] >= 0 ? (l[ix[k]] || "") : "";
+      const email = get("email").toLowerCase(), roleIn = get("role"), statusIn = get("status").toLowerCase();
+      const role = roleIn ? ROLE_NAMES.find((r) => r.toLowerCase() === roleIn.toLowerCase()) : "Viewer";
+      const r = { name: get("name"), email, role: role || roleIn, active: !["inactive", "no", "false", "0"].includes(statusIn) };
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) r.err = "Not a valid email";
+      else if (!IM_DOMAINS.includes(email.split("@")[1])) r.err = "Only sarlogisolutions.com, sartransport.com";
+      else if (!role) r.err = `Unknown role "${roleIn}"`;
+      else if (statusIn && !["active", "inactive", "yes", "no", "true", "false", "1", "0"].includes(statusIn)) r.err = `Unknown status "${get("status")}"`;
+      else if (email === String(me.email).toLowerCase()) r.err = "Your own account isn't changed";
+      if (!r.err && seen.has(email)) seen.get(email).err = "Repeated below (that row is used)";
+      if (!r.err) seen.set(email, r);
+      r.tag = r.err ? "err" : known.has(email) ? "upd" : "new";
+      im.rows.push(r);
+    });
+  }
+  const ok = im.rows.filter((r) => !r.err), nNew = ok.filter((r) => r.tag === "new").length;
+  $("imPrevWrap").classList.toggle("hidden", !im.rows.length);
+  $("imPrev").innerHTML = im.rows.map((r, i) => `<tr><td class="ua-sr">${i + 1}</td><td>${esc(r.name || "—")}</td><td>${esc(r.email || "—")}</td>
+    <td>${esc(r.role || "")}</td><td>${r.active ? "Active" : "Inactive"}</td>
+    <td><span class="im-tag ${r.tag}">${r.err ? esc(r.err) : r.tag === "new" ? "New" : "Update"}</span></td></tr>`).join("");
+  $("imSummary").innerHTML = im.rows.length
+    ? `<b class="ok">${fmtInt(nNew)} new</b> · <b class="ok">${fmtInt(ok.length - nNew)} to update</b>${im.rows.length > ok.length ? ` · <b class="err">${fmtInt(im.rows.length - ok.length)} skipped</b>` : ""}`
+    : "";
+  $("imGo").disabled = !ok.length;
+  $("imGo").textContent = ok.length ? `Import ${plural(ok.length, "user", "users")}` : "Import";
+  $("imMsg").textContent = "";
+}
+function openImport() {
+  $("imText").value = ""; $("imFile").value = ""; $("imFileName").textContent = "Choose a .csv file";
+  readImport();
+  $("importModal").classList.remove("hidden");
+  $("imClose").focus();
+}
+const closeImport = () => $("importModal").classList.add("hidden");
+$("admImportBtn").onclick = openImport;
+$("imClose").onclick = $("imCancel").onclick = closeImport;
+$("importModal").onclick = (e) => { if (e.target === $("importModal")) closeImport(); };
+$("importModal").addEventListener("keydown", (e) => { if (e.key === "Escape") closeImport(); });
+$("imText").oninput = readImport;
+$("imFile").onchange = async () => {
+  const f = $("imFile").files[0];
+  if (!f) return;
+  $("imFileName").textContent = f.name;
+  $("imText").value = (await f.text()).replace(/^\uFEFF/, "");
+  readImport();
+};
+$("imTemplate").onclick = () => {
+  const csv = "Name,Email,Role,Status\r\nRahul Verma,rahul@sarlogisolutions.com,Internal Audit,Active\r\nPriya Sharma,priya@sartransport.com,Viewer,Active\r\n";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "users_template.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$("imGo").onclick = async () => {
+  const users = im.rows.filter((r) => !r.err).map(({ name, email, role, active }) => ({ name, email, role, active }));
+  if (!users.length) return;
+  $("imGo").disabled = true; $("imGo").textContent = "Importing…";
+  try {
+    const r = await api("/api/mongo", { dataset: "importUsers", users });
+    closeImport();
+    const skip = (r.skipped || []).length + im.rows.filter((x) => x.err).length;
+    admMsg(`Imported: ${fmtInt(r.added)} added, ${fmtInt(r.updated)} updated${skip ? `, ${fmtInt(skip)} skipped` : ""}.`, true);
+    await openAdmin();
+  } catch (e) {
+    if (["signed out", "no access"].includes(e.message)) return;
+    $("imMsg").textContent = e.message;
+    $("imGo").disabled = false; $("imGo").textContent = `Import ${plural(users.length, "user", "users")}`;
+  }
+};
 $("umClose").onclick = $("umCancel").onclick = closeUserForm;
 $("userModal").onclick = (e) => { if (e.target === $("userModal")) closeUserForm(); };
 $("userModal").addEventListener("keydown", (e) => { if (e.key === "Escape") closeUserForm(); });

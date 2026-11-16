@@ -5,6 +5,8 @@
 //   POST /api/mongo  { dataset: "users" }                          -> { users }   (admin)
 //   POST /api/mongo  { dataset: "saveUser", email, name, role, active } -> { ok }  (admin; adds or updates)
 //   POST /api/mongo  { dataset: "deleteUser", email }               -> { ok }      (admin)
+//   POST /api/mongo  { dataset: "importUsers", users: [{ email, name, role, active }] }
+//                    -> { added, updated, skipped: [{ email, reason }] }  (admin; Import CSV, up to 1,000 rows)
 //   POST /api/mongo  { dataset: "checklist", company, lob, month? } -> { rows }    (signed in; month "2026-11",
 //                                                                                   every month when left out;
 //                                                                                   lob "*" = every LOB's rows)
@@ -166,6 +168,7 @@ async function manageUsers(me, body) {
       .sort({ name: 1, email: 1 }).toArray();
     return { users, breakGlass: list(process.env.ADMIN_EMAILS) };
   }
+  if (body.dataset === "importUsers") return importUsers(me, body, col);
   const email = String(body.email || "").trim().toLowerCase();
   if (!EMAIL_RE.test(email)) throw new HttpError(400, "Enter a valid email address.");
   if (!allowedDomains().includes(email.split("@")[1])) throw new HttpError(400, `Only ${allowedDomains().join(", ")} accounts can be added.`);
@@ -186,6 +189,36 @@ async function manageUsers(me, body) {
     { upsert: true },
   );
   return { ok: true };
+}
+
+// Import CSV: the same checks as saveUser, row by row. A row whose role isn't one of ROLES is skipped (not made a
+// Viewer), your own row is skipped, and a later row for the same email wins. Existing users are updated.
+const MAX_IMPORT = 1000;
+async function importUsers(me, body, col) {
+  const input = Array.isArray(body.users) ? body.users : [];
+  if (!input.length) throw new HttpError(400, "The file has no users.");
+  if (input.length > MAX_IMPORT) throw new HttpError(400, `Up to ${MAX_IMPORT} users at a time.`);
+  const skipped = [], rows = new Map();
+  for (const u of input) {
+    const email = String(u.email || "").trim().toLowerCase();
+    const role = ROLES.find((r) => r.toLowerCase() === String(u.role || "Viewer").trim().toLowerCase());
+    if (!EMAIL_RE.test(email)) skipped.push({ email, reason: "Not a valid email" });
+    else if (!allowedDomains().includes(email.split("@")[1])) skipped.push({ email, reason: `Only ${allowedDomains().join(", ")} accounts` });
+    else if (!role) skipped.push({ email, reason: `Unknown role "${u.role}"` });
+    else if (email === me.email) skipped.push({ email, reason: "Your own account isn't changed by an import" });
+    else rows.set(email, { email, name: String(u.name || "").trim() || email, role, active: u.active !== false });
+  }
+  if (!rows.size) return { added: 0, updated: 0, skipped };
+  const existing = new Set((await col.find({}, { projection: { _id: 0, email: 1 } }).toArray()).map((d) => String(d.email).toLowerCase()));
+  const now = new Date();
+  await col.bulkWrite([...rows.values()].map((r) => ({ updateOne: {
+    filter: emailQuery(r.email),
+    update: { $set: { ...r, updatedAt: now, updatedBy: me.email }, $setOnInsert: { addedAt: now, addedBy: me.email } },
+    upsert: true,
+  } })), { ordered: false });
+  rows.forEach((_, e) => userCache.delete(e));
+  const added = [...rows.keys()].filter((e) => !existing.has(e)).length;
+  return { added, updated: rows.size - added, skipped };
 }
 
 // ============================================================ audit checklist
@@ -278,7 +311,7 @@ export default async function handler(req, res) {
       }
       return res.status(200).json(me);
     }
-    if (["users", "saveUser", "deleteUser"].includes(body.dataset)) {
+    if (["users", "saveUser", "deleteUser", "importUsers"].includes(body.dataset)) {
       if (me.role !== "admin") throw new HttpError(403, "Only an Admin can manage users.");
       if (!process.env.AUDIT_URI) throw new HttpError(500, "AUDIT_URI is not set: the user list needs it.");
       return res.status(200).json(await manageUsers(me, body));
