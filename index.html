@@ -152,6 +152,7 @@
   .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; color: var(--good); }
   /* Branch › Job Owner table (same layout as the Canada ops dashboard's Unbilled Revenue page) */
   .filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-left: 12px; }
+  .ck-range { display: contents; }
   .filters label { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; }
   /* dropdowns: own chevron, soft shadow, blue hover / focus ring (filters, currency, Admin Panel role) */
   .select, .adm-add select, .adm-tbl select {
@@ -637,8 +638,9 @@
         <span class="fx" id="btFx">1 USD = <input id="btRate" type="number" min="0.01" step="0.01" value="1.40" aria-label="Exchange rate"> <span id="btRateCur">CAD</span></span>
       </div>
       <div class="filters hidden" id="ckFilters">
-        <label for="ckFrom">From</label><select class="select" id="ckFrom"></select>
-        <label for="ckTo">To</label><select class="select" id="ckTo"></select>
+        <span class="ck-range" id="ckRange"><label for="ckFrom">From</label><select class="select" id="ckFrom"></select>
+        <label for="ckTo">To</label><select class="select" id="ckTo"></select></span>
+        <span class="ck-range hidden" id="ckMonthWrap"><label for="ckMonth">Month</label><select class="select" id="ckMonth"></select></span>
         <select class="select" id="ckView" aria-label="View"><option value="month" selected>Monthly</option><option value="week">Weekly</option></select>
       </div>
       <div class="topbar-actions">
@@ -1795,7 +1797,9 @@ function ckAllMonths() {
   for (let d = new Date(since[0], since[1], 1), now = new Date(); d <= now; d.setMonth(d.getMonth() + 1)) out.push(ymd(d).slice(0, 7));
   return out;
 }
-const ckMonths = () => ckAllMonths().filter((m) => m >= $("ckFrom").value && m <= $("ckTo").value);
+// Weekly shows one month (the Month picker, this month by default); Monthly shows From → To
+const ckMonths = () => $("ckView").value === "week" ? [$("ckMonth").value]
+  : ckAllMonths().filter((m) => m >= $("ckFrom").value && m <= $("ckTo").value);
 // The table's columns: one per month, or (Weekly) one per ISO week of each month that has started by today
 function ckCols() {
   const months = ckMonths();
@@ -1810,6 +1814,8 @@ function fillCkMonths() {
   const all = ckAllMonths(), opts = all.map((m) => `<option value="${m}">${ckLabel(m)}</option>`).join("");
   const from = $("ckFrom").value, to = $("ckTo").value, keep = ck.company === ckCompany();
   $("ckFrom").innerHTML = opts; $("ckTo").innerHTML = opts;
+  const month = $("ckMonth").value; $("ckMonth").innerHTML = opts;
+  $("ckMonth").value = keep && all.includes(month) ? month : all[all.length - 1];
   $("ckFrom").value = keep && all.includes(from) ? from : all[0];
   $("ckTo").value = keep && all.includes(to) ? to : all[all.length - 1];
 }
@@ -1901,7 +1907,13 @@ $("ckBody").addEventListener("change", async (e) => {
     td.classList.remove("saving"); td.classList.add("ck-err"); td.title = err.message;
   }
 });
-$("ckFrom").onchange = $("ckTo").onchange = $("ckView").onchange = renderChecklist;
+$("ckFrom").onchange = $("ckTo").onchange = $("ckMonth").onchange = renderChecklist;
+$("ckView").onchange = () => {
+  const weekly = $("ckView").value === "week";
+  if (weekly) $("ckMonth").value = ckAllMonths().at(-1);   // Weekly opens on this month
+  $("ckRange").classList.toggle("hidden", weekly); $("ckMonthWrap").classList.toggle("hidden", !weekly);
+  renderChecklist();
+};
 
 // Most recent sign-in first; users who never signed in go last
 function renderUsage() {
