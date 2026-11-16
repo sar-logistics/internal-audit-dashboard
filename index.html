@@ -586,6 +586,7 @@
     <div class="tabs-bar">
       <div class="company-tabs" id="companyTabs">
         <button type="button" data-co="STSPL">STSPL - Air</button>
+        <button type="button" data-co="STSPL - Ocean">STSPL - Ocean</button>
         <button type="button" data-co="SAR USA">SAR USA</button>
         <button type="button" data-co="SAR Canada" class="on">SAR Canada</button>
         <button type="button" data-co="SAR Thailand">SAR Thailand</button>
@@ -869,6 +870,7 @@ const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
   "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago" },   // air only for now, as the India Air Operations dashboard; INR only
+  "STSPL - Ocean": { dataset: "stsplsea",  source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago" },   // sea, same rules as STSPL air; INR only
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
   "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
@@ -1425,6 +1427,12 @@ DRILLS_BY_DATASET.stspl = {
   ...DRILLS_BY_DATASET.usa,
   rev:   { kind: "rev",  cols: usEvaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS, "Inr"), amtKey: "unbilledRevenue" },
   cost:  { kind: "cost", cols: usEvaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS, "Inr"),     amtKey: "unpostedCost" },
+};
+// STSPL ocean: the same columns; sea_export_etdeta amounts have no currency suffix
+DRILLS_BY_DATASET.stsplsea = {
+  ...DRILLS_BY_DATASET.usa,
+  rev:   { kind: "rev",  cols: usEvaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS, ""), amtKey: "unbilledRevenue" },
+  cost:  { kind: "cost", cols: usEvaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS, ""),     amtKey: "unpostedCost" },
 };
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
 Object.values(DRILLS_BY_DATASET).forEach((d) => { d.fin = d.open; });   // Finance Pendency pop-ups: the Open Jobs columns

@@ -1,6 +1,7 @@
 // SAR Internal Audit Dashboard — data API (Vercel serverless function), read only.
 //
-//   POST /api/mongo-batch  { dataset: "canada" | "usa" | "indonesia" | "thailand" | "stspl", refresh? }  (signed in) -> per-job rows
+//   POST /api/mongo-batch  { dataset: "canada" | "usa" | "indonesia" | "thailand" | "stspl" | "stsplsea",
+//                         refresh? }  (signed in) -> per-job rows
 //     { jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows },
 //       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost,
 //                           revFlag, costFlag], rows },   revFlag / costFlag: counted in Revenue Not Billed / Cost Not Posted
@@ -26,6 +27,9 @@
 //   like SAR USA. Open = no Operation Lock Date and ETD/ETA New + 7 days has passed. Revenue Not
 //   Billed = unbilled revenue ≥ 1 and ETD/ETA New more than 3 days ago. Cost Not Posted = unposted
 //   cost ≥ 1 and the job is operation-locked. Days count from midnight IST. Amounts are in INR.
+// STSPL Ocean — the same rules as STSPL air, over database sar-in-sea-export-staging: jobs in
+//   sea_jobs_export and sea_jobs_import (job number = shipmentNo), charge lines in sea_export_etdeta
+//   (job number = jobNo; LOB FFWD SEA EXP / IMP read as Sea Export / Import). Amounts are in INR.
 // SAR Indonesia — same rules as the SAR Indonesia Sea Ops dashboard (database sar-id-ops):
 //   • Jobs: th_ops_export, th_ops_import and id_ops_crosstrade. Direction from the LOB code (FES, FIA…);
 //     period = ETA (Import) or ETD, else Job Opened. Open = status not CMP / CLS and ETD (ETA for
@@ -40,8 +44,9 @@
 // Operation Lock Pending = the job has no lock date.
 //
 // Environment: CANADA_URI (cluster holding sar-ca-ops), USA_URI (sar-usa-ops), INDONESIA_URI
-// (sar-id-ops), THAILAND_URI (sar-th-ops), STSPL_AIR_URI (sar-in-air-ops); the others fall back to CANADA_URI when they are on the
-// same cluster. CA_ / USA_ / ID_ / TH_ / STSPL_AIR_MONGO_DB rename the databases. A read-only Atlas user is enough.
+// (sar-id-ops), THAILAND_URI (sar-th-ops), STSPL_AIR_URI (sar-in-air-ops), STSPL_OCEAN_URI
+// (sar-in-sea-export-staging, falling back to STSPL_AIR_URI on the same cluster); the others fall back to CANADA_URI when they are on the
+// same cluster. CA_ / USA_ / ID_ / TH_ / STSPL_AIR_ / STSPL_OCEAN_MONGO_DB rename the databases. A read-only Atlas user is enough.
 
 import { authenticate, sendError, HttpError, connectDb, mongoError } from "./mongo.js";
 
@@ -51,6 +56,7 @@ const ENTITIES = {
   indonesia: { envs: ["INDONESIA_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.ID_MONGO_DB || "sar-id-ops" },
   thailand:  { envs: ["THAILAND_URI", "CANADA_URI", "CA_MONGO_URI"], db: process.env.TH_MONGO_DB || "sar-th-ops" },
   stspl:     { envs: ["STSPL_AIR_URI"], db: process.env.STSPL_AIR_MONGO_DB || "sar-in-air-ops" },
+  stsplsea:  { envs: ["STSPL_OCEAN_URI", "STSPL_AIR_URI"], db: process.env.STSPL_OCEAN_MONGO_DB || "sar-in-sea-export-staging" },
 };
 const TTL_MS = 5 * 60 * 1000;
 
@@ -159,11 +165,20 @@ async function canadaData(db) {
 
 // ---------------------------------------------------------------- SAR USA (sar-usa-ops)
 
-// STSPL air is laid out like SAR USA (same sync), so it goes through the same functions with its own collections.
+// STSPL air and ocean are laid out like SAR USA (same sync), so they go through the same functions with their own
+// collections. jobKey / lineKey: the job number field of the jobs / charge lines (default shipmentId); lobOf
+// maps the charge lines' LOB to SEA|AIR|ROAD EXPORT|IMPORT; cur: the suffix of the charge lines' amount fields.
 const US_LIKE = {
-  usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta" },
-  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true },
+  usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd" },
+  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr" },
+  stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "",
+              jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob",
+              lobOf: { "FFWD SEA EXP": "SEA EXPORT", "FFWD SEA IMP": "SEA IMPORT" } },
 };
+const jobKeyOf = (cfg) => cfg.jobKey || "shipmentId";
+const lineKeyOf = (cfg) => cfg.lineKey || "shipmentId";
+const lineLobOf = (cfg, e) => { const v = String(e[cfg.lineLob || "lobExportImport"] || "").trim().toUpperCase();
+                                 return cfg.lobOf ? cfg.lobOf[v] || v : v; };
 // India Air Operations dashboard rules (cfg.air): amounts count from 1, and its day cut-offs run from today's
 // midnight in IST
 const AIR_MIN = 1;
@@ -180,14 +195,14 @@ const isAirOpen = (d, today) => { const t = timeOf(d.etdEtaNew); return !filled(
 async function usaJobs(db, cfg) {
   const today = istToday();
   const docs = (await Promise.all(cfg.jobs.map((name) => db.collection(name)
-    .find({}, { projection: { _id: 0, shipmentId: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1,
+    .find({}, { projection: { _id: 0, [jobKeyOf(cfg)]: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1,
                               jobOwner: 1, etdEtaNew: 1, jobDate: 1, operationLockDate: 1, operationLock: 1,
                               financialLockDate: 1, financialLock: 1 } }).toArray()))).flat();
   return { fields: JOB_FIELDS, rows: docs.map((d) => {
     const lob = String(d.lob || "").trim().toUpperCase();
     const direction = d.direction || (/EXPORT/.test(lob) ? "Export" : /IMPORT/.test(lob) ? "Import" : titleCase(lob.split(" ").pop() || ""));
     return [
-      String(d.shipmentId ?? ""), direction, lob,
+      String(d[jobKeyOf(cfg)] ?? ""), direction, lob,
       d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
       d.etdEtaNew || d.jobDate || "",
       cfg.air ? isAirOpen(d, today) : !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
@@ -200,12 +215,12 @@ async function usaJobs(db, cfg) {
 // the first line's ETD/ETA New; amounts summed over the shipment's lines.
 async function usaEvaJobs(db, cfg) {
   const rows = await db.collection(cfg.etdeta)
-    .find({}, { projection: { _id: 0, shipmentId: 1, lobExportImport: 1, location: 1, jobOwner: 1, etdEtaNew: 1,
+    .find({}, { projection: { _id: 0, [lineKeyOf(cfg)]: 1, [cfg.lineLob || "lobExportImport"]: 1, location: 1, jobOwner: 1, etdEtaNew: 1,
                               unbilledRevenue: 1, unpostedCost: 1, operationLockDate: 1 } }).toArray();
   const byJob = new Map();
   for (const e of rows) {
-    const job = String(e.shipmentId ?? "").trim();
-    const lob = String(e.lobExportImport || "").trim().toUpperCase();
+    const job = String(e[lineKeyOf(cfg)] ?? "").trim();
+    const lob = lineLobOf(cfg, e);
     if (!job || !US_LOB_RE.test(lob)) continue;
     const key = job + "\u0001" + lob;
     let t = byJob.get(key);
@@ -343,10 +358,12 @@ const anyOf = (ids) => ({ $in: [...ids, ...ids.filter((j) => /^\d+$/.test(j)).ma
 async function jobDetails(db, entity, body) {
   const ids = jobIds(body);
   if (!ids.length) return { rows: [] };
-  const names = US_LIKE[entity] ? US_LIKE[entity].jobs : SEA_JOB_COLLECTIONS[entity] || CA_JOB_COLLECTIONS;
-  const fields = SEA_JOB_COLLECTIONS[entity] ? ID_JOB_DETAIL_FIELDS : JOB_DETAIL_FIELDS;
+  const cfg = US_LIKE[entity] || {}, key = jobKeyOf(cfg);
+  const names = cfg.jobs || SEA_JOB_COLLECTIONS[entity] || CA_JOB_COLLECTIONS;
+  const fields = SEA_JOB_COLLECTIONS[entity] ? ID_JOB_DETAIL_FIELDS : [...JOB_DETAIL_FIELDS, key];
   const rows = (await Promise.all(names.map((name) => db.collection(name)
-    .find({ shipmentId: anyOf(ids) }, { projection: projectionOf(fields) }).toArray()))).flat();
+    .find({ [key]: anyOf(ids) }, { projection: projectionOf(fields) }).toArray()))).flat();
+  if (key !== "shipmentId") for (const r of rows) r.shipmentId = r[key];
   return { rows };
 }
 
@@ -362,10 +379,13 @@ async function chargeLines(db, entity, body) {
     return { rows };
   }
   if (US_LIKE[entity]) {
-    const filter = { shipmentId: anyOf(ids), lobExportImport: { $regex: US_LOB_RE.source, $options: "i" },
-                     [cost ? "unpostedCost" : "unbilledRevenue"]: US_LIKE[entity].air ? { $gte: AIR_MIN } : { $gt: 0 } };
-    const fields = entity === "stspl" ? US_CHARGE_FIELDS.map((f) => f.replace(/Usd$/, "Inr")) : US_CHARGE_FIELDS;
-    return { rows: await db.collection(US_LIKE[entity].etdeta).find(filter, { projection: projectionOf(fields) }).toArray() };
+    const cfg = US_LIKE[entity];
+    const filter = { [lineKeyOf(cfg)]: anyOf(ids),
+                     ...(cfg.lobOf ? { [cfg.lineLob]: { $in: Object.keys(cfg.lobOf) } }
+                                   : { lobExportImport: { $regex: US_LOB_RE.source, $options: "i" } }),
+                     [cost ? "unpostedCost" : "unbilledRevenue"]: cfg.air ? { $gte: AIR_MIN } : { $gt: 0 } };
+    const fields = [...US_CHARGE_FIELDS.map((f) => f.replace(/Usd$/, cfg.cur)), lineKeyOf(cfg)];
+    return { rows: await db.collection(cfg.etdeta).find(filter, { projection: projectionOf(fields) }).toArray() };
   }
   const filter = cost
     ? { jobNo: anyOf(ids), $or: [{ unpostedCost: { $gt: 0 } }, { unbilledCost: { $gt: 0 } }] }
