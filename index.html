@@ -995,9 +995,9 @@ const REPORTS = {
   rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => !!r.revFlag,  amtKey: "unbilledRevenue" },
   cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => !!r.costFlag, amtKey: "unpostedCost" },
   fin:   { title: "Finance Pendency",   pool: "jobs", flag: (r) => !!r.finPending,                     count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} pending` },
-  gpLow:  { title: "GP% < 3%",  pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct < 3,  amtKey: "gpProfit",
+  gpLow:  { title: "GP% < 3%",  pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct < 3,
             count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} below 3%` },
-  gpHigh: { title: "GP% > 20%", pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct > 20, amtKey: "gpProfit",
+  gpHigh: { title: "GP% > 20%", pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct > 20,
             count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} above 20%` },
 };
 // GP% per job (null when the company has no GP data yet or the job has no income)
