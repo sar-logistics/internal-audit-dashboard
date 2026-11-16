@@ -696,6 +696,7 @@
           <h2 id="btTitle">Branch › Job Owner — Total Jobs Created</h2>
           <span class="count" id="btCount"></span>
           <button class="btn-soft" id="btExpand" type="button">» Expand All</button>
+          <label class="switch" id="btLockSwitch" title="Count only jobs whose Operation Lock is done"><input type="checkbox" id="btReqLock"><span class="track"></span>Require Ops Lock = <b id="btReqLockLbl">No</b></label>
           <label class="switch" id="btAmountSwitch"><input type="checkbox" id="btByAmount"><span class="track"></span>View by <b id="btByLbl">Count</b></label>
         </div>
         <div class="tbl-wrap"><table class="bt"><thead id="btHead"></thead><tbody id="btBody"></tbody></table></div>
@@ -990,11 +991,11 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
 const AV_COLORS = ["#3F6E1E", "#1F3A6E", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
 const REPORTS = {
-  total: { title: "Total Jobs Created", pool: "jobs", flag: () => true,                                 count: (n) => `${fmtInt(n)} total jobs` },
+  total: { title: "Total Jobs Created", pool: "jobs", lock: true, flag: () => true,                                 count: (n) => `${fmtInt(n)} total jobs` },
   open:  { title: "Open Jobs",          pool: "jobs", flag: (r) => !!r.open,                           count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} open` },
-  rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => !!r.revFlag,  amtKey: "unbilledRevenue" },
-  cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => !!r.costFlag, amtKey: "unpostedCost" },
-  fin:   { title: "Finance Pendency",   pool: "jobs", flag: (r) => !!r.finPending,                     count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} pending` },
+  rev:   { title: "Revenue Not Billed", pool: "eva",  lock: true, flag: (r) => !!r.revFlag,  amtKey: "unbilledRevenue" },
+  cost:  { title: "Cost Not Posted",    pool: "eva",  lock: true, flag: (r) => !!r.costFlag, amtKey: "unpostedCost" },
+  fin:   { title: "Finance Pendency",   pool: "jobs", lock: true, flag: (r) => !!r.finPending,                     count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} pending` },
   gpLow:  { title: "GP% < 3%",  pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct < 3,
             count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} below 3%` },
   gpHigh: { title: "GP% > 20%", pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct > 20,
@@ -1003,7 +1004,7 @@ const REPORTS = {
 // GP% per job (null when the company has no GP data yet or the job has no income)
 const gpPctOf = (r) => typeof r.gpIncome === "number" && r.gpIncome > 0 ? r.gpProfit / r.gpIncome * 100 : null;
 let lobPick = "";   // the LOB picked on any report or on Status; every page uses it when that company has the LOB
-const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
+const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, reqLock: false, open: new Set(), shown: [], allOpen: false };
 
 function parseDay(v) {
   if (!v) return null;
@@ -1191,9 +1192,13 @@ function filterState() {
   return { prop: v.prop, lo, hi, lob, cols, colProp: v.prop, label: v.label, range,
            short: `${v.label(lo)}${hi !== lo ? " – " + v.label(hi) : ""}` };
 }
+// Require Ops Lock (the CA ops dashboard's switch): on the Operations and Finance reports that have it (lock),
+// only jobs whose Operation Lock is done count — on the job lists no opsPending, on the charge-line jobs opsLocked
+const lockOn = () => bt.reqLock && !!REPORTS[bt.report].lock;
 function inFilters(pool) {
   const { prop, lo, hi, lob } = filterState();
-  return bt[pool].filter((r) => r[prop] !== null && r[prop] >= lo && r[prop] <= hi && (!lob || r.lobLabel === lob));
+  const locked = lockOn() ? (pool === "jobs" ? (r) => !r.opsPending : (r) => !!r.opsLocked) : () => true;
+  return bt[pool].filter((r) => r[prop] !== null && r[prop] >= lo && r[prop] <= hi && (!lob || r.lobLabel === lob) && locked(r));
 }
 function filterLabel() {
   const { short, lob } = filterState();
@@ -1262,6 +1267,9 @@ function renderBranchTable() {
   const byAmount = bt.byAmount && !!rep.amtKey;
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
+  $("btLockSwitch").classList.toggle("hidden", !rep.lock);   // Open Jobs are by definition not ops-locked
+  $("btReqLock").checked = bt.reqLock;
+  $("btReqLockLbl").textContent = bt.reqLock ? "Yes" : "No";
   $("btByLbl").textContent = byAmount ? "Amount" : "Count";
   document.querySelectorAll("#btReports [data-report]").forEach((b) => b.classList.toggle("active", b.dataset.report === bt.report));
 
@@ -1344,6 +1352,7 @@ $("btReports").onclick = (e) => {
   else if (e.target.closest("[data-sys=status]")) openChecklist();
 };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
+$("btReqLock").onchange = (e) => { bt.reqLock = e.target.checked; renderBranchTable(); };
 ["btMonth", "btFrom", "btTo", "btFromDay", "btToDay"].forEach((id) => { $(id).onchange = renderBranchTable; });
 $("btLob").onchange = () => { lobPick = $("btLob").value; renderBranchTable(); };
 $("btView").onchange = () => { fillPeriodPickers(false); renderBranchTable(); };

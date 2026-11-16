@@ -4,7 +4,8 @@
 //                         refresh? }  (signed in) -> per-job rows
 //     { jobs:    { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, open, finPending, opsPending], rows },
 //       evaJobs: { fields: [jobNo, direction, lob, branch, jobOwner, periodDate, unbilledRevenue, unpostedCost,
-//                           revFlag, costFlag], rows },   revFlag / costFlag: counted in Revenue Not Billed / Cost Not Posted
+//                           revFlag, costFlag, opsLocked], rows },   revFlag / costFlag: counted in Revenue Not Billed /
+//                           Cost Not Posted; opsLocked: the job's Operation Lock is done (Require Ops Lock switch)
 //       dataRefreshedAt: { jobs, estimatedVsActual }, builtAt }
 //     The KPI cards and the Branch › Job Owner table are worked out from these rows in the page.
 //     refresh: true skips the 5-minute cache.
@@ -83,9 +84,9 @@ const projectionOf = (fields) => Object.fromEntries([["_id", 0], ...fields.map((
 
 const JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "open", "finPending", "opsPending"];
 const EVA_JOB_FIELDS = ["jobNo", "direction", "lob", "branch", "jobOwner", "periodDate", "unbilledRevenue", "unpostedCost",
-                        "revFlag", "costFlag"];
+                        "revFlag", "costFlag", "opsLocked"];
 // Canada / USA: a job counts when its summed amount is > 0
-const evaRow = (base, rev, cost) => [...base, round2(rev), round2(cost), round2(rev) > 0, round2(cost) > 0];
+const evaRow = (base, rev, cost, locked) => [...base, round2(rev), round2(cost), round2(rev) > 0, round2(cost) > 0, !!locked];
 const finPendingOf = (d) => !(filled(d.financialLockDate) || filled(d.financialLock));
 const opsPendingOf = (d) => !(filled(d.operationLockDate) || filled(d.operationLock));
 
@@ -102,7 +103,8 @@ const evaDirection = (lob) => { const u = String(lob || "").toUpperCase(); retur
 async function canadaEvaJobs(db) {
   const rows = await db.collection(CA_EVA)
     .find({}, { projection: { _id: 0, jobNo: 1, unbilledRevenue: 1, unpostedCost: 1, unbilledCost: 1, lob: 1, lob2: 1, direction: 1,
-                              etdEtaNew: 1, etdEta: 1, jobDate: 1, location: 1, jobOwner: 1, salesPerson: 1 } }).toArray();
+                              etdEtaNew: 1, etdEta: 1, jobDate: 1, location: 1, jobOwner: 1, salesPerson: 1,
+                              operationLock: 1, operationLockDate: 1 } }).toArray();
   const byJob = new Map();
   for (const e of rows) {
     const job = String(e.jobNo ?? "").trim();
@@ -111,7 +113,8 @@ async function canadaEvaJobs(db) {
     if (!t) {
       t = { rev: 0, cost: 0, lob2: e.lob2 || "", direction: e.direction || evaDirection(e.lob2 || e.lob),
             etdEtaNew: e.etdEtaNew || "", etdEta: e.etdEta || "", jobDate: e.jobDate || "",
-            location: e.location || "", jobOwner: e.jobOwner || "", salesPerson: e.salesPerson || "" };
+            location: e.location || "", jobOwner: e.jobOwner || "", salesPerson: e.salesPerson || "",
+            locked: filled(e.operationLock) || filled(e.operationLockDate) };   // caOpsLockDone, on the job's first line
       byJob.set(job, t);
     }
     t.rev  += toNum(e.unbilledRevenue);
@@ -124,7 +127,7 @@ async function canadaEvaJobs(db) {
       job, t.direction, t.lob2 || (t.direction === "General" ? "GEN" : "SEA " + t.direction.toUpperCase()),
       t.location || "(No Branch)", t.jobOwner || t.salesPerson || "(Unknown)",
       t.direction === "General" ? (t.jobDate || t.etdEtaNew || t.etdEta) : (t.etdEtaNew || t.etdEta || t.jobDate),
-    ], t.rev, t.cost));
+    ], t.rev, t.cost, t.locked));
   }
   return out;
 }
@@ -245,9 +248,9 @@ async function usaEvaJobs(db, cfg) {
   const cut3 = istToday() - 3 * 864e5;
   return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => {
     const base = [t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew];
-    if (!cfg.air) return evaRow(base, t.rev, t.cost);
+    if (!cfg.air) return evaRow(base, t.rev, t.cost, t.locked);
     const etd = timeOf(t.etdEtaNew);
-    return [...base, round2(t.rev), round2(t.cost), t.rev >= AIR_MIN && etd !== null && etd < cut3, t.cost >= AIR_MIN && t.locked];
+    return [...base, round2(t.rev), round2(t.cost), t.rev >= AIR_MIN && etd !== null && etd < cut3, t.cost >= AIR_MIN && t.locked, t.locked];
   }) };
 }
 
@@ -329,7 +332,8 @@ async function seaOpsData(db, entity) {
                     !(filled(d.operationsLockedOn) || filled(d.operationLock)),
                     round2(filled(d[GP_INCOME]) ? toNum(d[GP_INCOME]) : t.income), round2(toNum(d.jobProfit))]);
     evaJobs.rows.push([...base, round2(t.wip), round2(-t.accrual),   // accrual is negative: unposted cost = −accrual
-                       t.wipLines > 0 && !!threshold && threshold < cut3, t.accLines > 0 && !!threshold && threshold < cut7]);
+                       t.wipLines > 0 && !!threshold && threshold < cut3, t.accLines > 0 && !!threshold && threshold < cut7,
+                       filled(d.operationsLockedOn) || filled(d.operationLock)]);
   }
   const iso = (ms) => ms ? new Date(ms).toISOString() : "";
   return { jobs, evaJobs, dataRefreshedAt: { jobs: iso(newestId(jobDocs)), estimatedVsActual: iso(newestId(wip)) } };
