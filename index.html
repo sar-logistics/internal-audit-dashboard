@@ -1498,8 +1498,8 @@ DRILLS_BY_DATASET.stsplsea = {
   rev:   { kind: "rev",  cols: usEvaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS, ""), amtKey: "unbilledRevenue" },
   cost:  { kind: "cost", cols: usEvaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS, ""),     amtKey: "unpostedCost" },
 };
-// Job Profitability: the job list with Total Income, Job Profit and GP% (from the table's rows)
-const ID_COLS_GP = [...colList("shipmentId:Shipment ID;gpIncome:Total Income:n;gpProfit:Job Profit:n"), { key: "gpPct", label: "GP%", num: true, pct: true },
+// Job Profitability: the job list with Total Income, Total Expense, Job Profit and GP% (from the table's rows)
+const ID_COLS_GP = [...colList("shipmentId:Shipment ID;gpIncome:Total Income:n;gpExpense:Total Expense:n;gpProfit:Job Profit:n"), { key: "gpPct", label: "GP%", num: true, pct: true },
                     ...ID_COLS_TOTAL_JOBS.slice(1)];
 DRILLS_BY_DATASET.indonesia.gpLow = DRILLS_BY_DATASET.indonesia.gpHigh = { kind: "jobs", cols: ID_COLS_GP, gp: true };
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
@@ -1563,7 +1563,7 @@ async function openDrill(title, drill, summaryRows, subtitle) {
     // GP% pop-ups: Total Income, Job Profit and GP% come from the table's rows
     const gpOf = drill.gp ? new Map(summaryRows.map((r) => [String(r.jobNo), r])) : null;
     if (gpOf) rows.forEach((c) => { const g = gpOf.get(String(c.shipmentId ?? "")) || {};
-                                    Object.assign(c, { gpIncome: g.gpIncome, gpProfit: g.gpProfit, gpPct: g.gpPct }); });
+                                    Object.assign(c, { gpIncome: g.gpIncome, gpExpense: g.gpExpense, gpProfit: g.gpProfit, gpPct: g.gpPct }); });
     km.rows = rows.map((c) => drill.kind === "jobs"
       ? { ...c, shipmentId: String(c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.periodDate || "",
           location: c.location || c.jobBranch || c.branch || "", jobOwner: c.jobOwner || c.operator || "" }
