@@ -549,6 +549,15 @@
       </div>
       </div>
       <div class="nav-sec">
+      <button type="button" class="nav-label nav-toggle nav-group" aria-expanded="true">Job Profitability
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
+      </button>
+      <div class="nav-item" data-sys="profit" title="Job Profitability">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 14.5h13M2.5 11l4-4 3 3 4.5-5.5M10.5 4.5H14V8"/></svg>
+        <span>Job Profitability</span>
+      </div>
+      </div>
+      <div class="nav-sec">
       <button type="button" class="nav-label nav-toggle nav-group" aria-expanded="true">Status
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
       </button>
@@ -1287,6 +1296,7 @@ $("btReports").onclick = (e) => {
     if (fromStatus && on && on.dataset.co !== company) on.click();
   }
   else if (e.target.closest("[data-sys=status]")) openChecklist();
+  else if (e.target.closest("[data-sys=profit]")) { closeKpi(); showView("profit"); }
 };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btMonth", "btFrom", "btTo", "btFromDay", "btToDay"].forEach((id) => { $(id).onchange = renderBranchTable; });
@@ -1694,9 +1704,11 @@ const ROLE_NAMES = ["Viewer", "Strategy", "Internal Audit", "Admin"];   // Strat
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
 // "status" is the monthly audit checklist of the selected company; "usage" shows sign-in counts per user;
-// "tickets" lists the tickets raised from the account menu; "teams" is still to be built (coming-soon note).
-const SYS_PAGES = { status: "Audit Checklist — Monthly", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
-const SOON_PAGES = ["teams"];
+// "tickets" lists the tickets raised from the account menu; "teams" and "profit" (Job Profitability, its rules
+// still to come) are still to be built (coming-soon note).
+const SYS_PAGES = { status: "Audit Checklist — Monthly", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets",
+                    profit: "Job Profitability" };
+const SOON_PAGES = ["teams", "profit"];
 let currentView = "data";
 function showView(view) {
   currentView = view;
