@@ -31,10 +31,14 @@
 // The browser signs in with Google (OAuth client in Google Cloud project sar-group-internal-audit)
 // and sends "Authorization: Bearer <Google ID token>" on every call. api/mongo-batch.js uses the
 // same check (authenticate) for the data it returns.
+// Opened from the SAR Systems Hub instead: api/sso-verify.js checks the Hub's signed launch token and hands
+// the browser a session token of this dashboard (signed with a key derived from SSO_SHARED_SECRET, 12 hours),
+// sent the same way, "Authorization: Bearer <session token>". The user list decides access either way.
 // Environment: GOOGLE_CLIENT_ID (optional, overrides the default below),
 //              ALLOWED_DOMAINS (default sarlogisolutions.com, sartransport.com), ADMIN_EMAILS (comma-separated),
 //              AUDIT_URI (cluster holding sar-internal-audit; AUDIT_MONGO_DB renames it).
 
+import crypto from "node:crypto";
 import { MongoClient } from "mongodb";
 
 // OAuth Web client "sar-group-internal-audit". Not a secret; GOOGLE_CLIENT_ID overrides it.
@@ -113,6 +117,14 @@ async function listedUser(email) {
 const ROLES = ["Admin", "Strategy", "Internal Audit", "Viewer"];
 const roleName = (v) => ROLES.find((r) => r.toLowerCase() === String(v || "").trim().toLowerCase()) || "Viewer";
 
+/** Name on the user list (or the email when there is none). */
+export async function nameFor(email) {
+  const e = email.toLowerCase();
+  if (!process.env.AUDIT_URI) return e;
+  const u = await listedUser(e).catch(() => null);
+  return (u && String(u.name || "").trim()) || e;
+}
+
 /** "admin" | "strategy" | "internal audit" | "viewer" | null (no access). */
 export async function roleFor(email) {
   const e = email.toLowerCase();
@@ -143,11 +155,50 @@ async function verifyGoogleToken(idToken) {
   return user;
 }
 
+// ============================================================ Hub sign-in session
+// A small HS256 token of this dashboard, made by api/sso-verify.js after the Hub's launch token checks out.
+// Its key is derived from SSO_SHARED_SECRET, so a Hub launch token can never pass as a session (and the
+// other way round).
+const SESSION_ISSUER = "sar-internal-audit";
+const SESSION_TTL_S = 12 * 60 * 60;
+const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+const unb64url = (s) => Buffer.from(String(s).replace(/-/g, "+").replace(/_/g, "/"), "base64");
+function sessionKey() {
+  const secret = process.env.SSO_SHARED_SECRET;
+  if (!secret) throw new HttpError(401, "Sign-in expired. Please sign in again.");
+  return crypto.createHmac("sha256", secret).update("sar-internal-audit session v1").digest();
+}
+export function mintSession(email, name) {
+  const now = Math.floor(Date.now() / 1000);
+  const head = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const body = b64url(JSON.stringify({ iss: SESSION_ISSUER, email, name, iat: now, exp: now + SESSION_TTL_S }));
+  const sig = b64url(crypto.createHmac("sha256", sessionKey()).update(head + "." + body).digest());
+  return head + "." + body + "." + sig;
+}
+function issuerOf(token) {
+  try { return JSON.parse(unb64url(token.split(".")[1]).toString("utf8")).iss || ""; } catch { return ""; }
+}
+function verifySession(token) {
+  const bad = () => new HttpError(401, "Sign-in expired. Please open the dashboard from the Hub again.");
+  const [head, body, sig] = token.split(".");
+  if (!head || !body || !sig) throw bad();
+  const want = crypto.createHmac("sha256", sessionKey()).update(head + "." + body).digest();
+  const got = unb64url(sig);
+  if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) throw bad();
+  let p;
+  try { p = JSON.parse(unb64url(body).toString("utf8")); } catch { throw bad(); }
+  if (p.iss !== SESSION_ISSUER || !(Number(p.exp) * 1000 > Date.now()) || !p.email) throw bad();
+  const email = String(p.email).toLowerCase();
+  return { email, name: p.name || email, picture: "" };
+}
+
 /** Returns { email, name, picture, role } or throws 401 / 403. */
 export async function authenticate(req) {
   const h = req.headers.authorization || "";
   if (!h.startsWith("Bearer ")) throw new HttpError(401, "Not signed in");
-  const user = await verifyGoogleToken(h.slice(7));
+  const token = h.slice(7);
+  // Same check for both kinds: the user list decides, so removing someone takes effect within a minute
+  const user = issuerOf(token) === SESSION_ISSUER ? verifySession(token) : await verifyGoogleToken(token);
   const role = await roleFor(user.email);
   if (!role) throw new HttpError(403, `${user.email} is not on the user list of this dashboard. Ask an Admin to add you.`, "no_access");
   return { ...user, role };

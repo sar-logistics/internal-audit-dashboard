@@ -1009,6 +1009,7 @@ function setToken(t) { idToken = t; }
 
 function showLogin(message) {
   setToken(null);
+  try { sessionStorage.removeItem("auditSession"); } catch {}   // a Hub sign-in ends here too
   me = null;
   for (const k of Object.keys(loaded)) delete loaded[k];
   for (const k of Object.keys(pending)) delete pending[k];
@@ -2669,7 +2670,12 @@ $("signOut").onclick = () => { acctOpen(false); try { google.accounts.id.disable
   fetch("/api/mongo-batch?warm=1").catch(() => {});   // wakes the data function and opens its database connections before sign-in
   try { googleClientId = (await (await fetch("/api/mongo?config=1")).json()).googleClientId; } catch {}
   try { sessionStorage.removeItem("auditIdToken"); } catch {}   // drop a token saved by the earlier build
-  showLogin();
+  // Opened from the SAR Systems Hub: api/sso-verify.js left a session token of this dashboard in this tab,
+  // so no Google button. It stays for this tab only (reloads keep you signed in) until it runs out or you sign out.
+  let hubSession = null;
+  try { hubSession = sessionStorage.getItem("auditSession"); } catch {}
+  if (hubSession && tokenValid(hubSession)) { setToken(hubSession); start(); }
+  else showLogin();
 })();
 </script>
 </body>
