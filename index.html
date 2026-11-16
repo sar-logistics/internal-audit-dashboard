@@ -520,6 +520,40 @@
   .ua-n.on { color: #1d4ed8; }
   .ua-last { color: #64748b; font-size: 12px; white-space: nowrap; }
   .ua-empty { text-align: center; padding: 48px; color: #94a3b8; }
+
+  /* Admin Panel, as in the CA ops dashboard: users as cards, grouped by role */
+  .ap-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; font: 500 13px var(--font); color: #0f172a; background: #fff; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+  .ap-btn span { font-size: 16px; line-height: 1; }
+  .ap-btn:hover { border-color: #93C5FD; }
+  #admMsg { font-size: 12.5px; }
+  #admMsg.ok { color: #3B6D11; } #admMsg.err { color: #B91C1C; }
+  .ap-group { font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: .08em; text-transform: uppercase; margin: 6px 0 12px; }
+  .ap-cards { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; }
+  .ap-card { background: #fff; border: 1px solid #e8ecf0; border-radius: 12px; padding: 14px 14px 12px; width: 220px; box-sizing: border-box; box-shadow: 0 1px 4px rgba(0,0,0,.06); transition: box-shadow .15s, transform .15s; }
+  .ap-card:hover { box-shadow: 0 6px 16px rgba(15,23,42,.08); transform: translateY(-1px); }
+  .ap-card.off { opacity: .6; }
+  .ap-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; }
+  .ap-av { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .ap-who { flex: 1; min-width: 0; }
+  .ap-name { font-size: 13px; font-weight: 600; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ap-you { font-size: 10px; background: #eff6ff; color: #3b82f6; border-radius: 4px; padding: 1px 5px; font-weight: 600; margin-left: 4px; }
+  .ap-mail { font-size: 11px; color: #64748b; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ap-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .ap-acts { display: flex; gap: 4px; flex-shrink: 0; }
+  .ap-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+  .ap-badges .ua-off { margin-left: 0; }
+  .ap-act { width: 26px; height: 26px; border: none; background: #f8fafc; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; }
+  .ap-act:hover { background: #eef2f7; color: #1D4E73; }
+  .ap-act.del:hover { color: #B91C1C; }
+  .ap-new { width: 220px; min-height: 96px; border: 2px dashed #e2e8f0; border-radius: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #cbd5e1; font: 500 13px var(--font); background: none; transition: border-color .15s, color .15s; }
+  .ap-new:hover { border-color: #94a3b8; color: #64748b; }
+  .ap-empty { color: #94a3b8; padding: 40px 0; text-align: center; }
+  #userModal .modal-box { width: min(540px, 100%); }
+  .um-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .um-two > div { display: grid; gap: 6px; }
+  .um-body .select { width: 100%; }
+  .um-body input:disabled { background: #f8fafc; color: var(--ink-faint); }
+  #umMsg { margin-right: auto; font-size: 12.5px; color: #B91C1C; }
 </style>
 </head>
 <body>
@@ -777,24 +811,15 @@
       </table></div>
     </div>
     <div class="content hidden" id="adminContent">
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Users</h2>
-          <span class="count" id="admCount"></span>
-          <input class="km-search" id="admSearch" placeholder="Search name, email or role…" aria-label="Search users">
-        </div>
-        <form class="adm-add" id="admAdd" autocomplete="off">
-          <input type="email" id="admEmail" placeholder="name@sarlogisolutions.com or @sartransport.com" required aria-label="Email">
-          <input type="text" id="admName" placeholder="Full name" aria-label="Name">
-          <select id="admRole" aria-label="Role"><option>Viewer</option><option>Strategy</option><option>Internal Audit</option><option>Admin</option></select>
-          <button class="btn-primary" type="submit">Add user</button>
-          <span id="admMsg"></span>
-        </form>
-        <div class="tbl-wrap"><table class="kt adm-tbl">
-          <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Added by</th><th></th></tr></thead>
-          <tbody id="admBody"></tbody>
-        </table></div>
+      <div class="ua-title"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="7" width="9" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>Admin Panel</div>
+      <div class="ua-bar">
+        <button class="ap-btn" id="admAddBtn" type="button"><span>+</span> Add User</button>
+        <label class="ua-search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>
+          <input id="admSearch" placeholder="Search by name, email or role…" aria-label="Search users"></label>
+        <span class="ua-count" id="admCount"></span>
+        <span id="admMsg"></span>
       </div>
+      <div id="admBody"></div>
     </div>
 
   </div>
@@ -807,6 +832,32 @@
     <div class="cf-foot"><button type="button" id="cfReset">Reset</button><button type="button" class="cf-apply" id="cfApply">Apply</button></div>
   </div>
 
+  <div class="modal hidden" id="userModal" role="dialog" aria-modal="true" aria-labelledby="umTitle">
+    <form class="modal-box tf-box" id="userForm" autocomplete="off">
+      <div class="modal-head">
+        <h3 id="umTitle">Add User</h3>
+        <span class="count" id="umSub"></span>
+        <button class="km-close" id="umClose" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="tf-body um-body">
+        <label for="umName">Full name *</label>
+        <input id="umName" maxlength="120" placeholder="e.g. Rahul Verma" required>
+        <div class="um-two">
+          <div><label for="umRole">Role *</label>
+            <select class="select" id="umRole"><option>Viewer</option><option>Strategy</option><option>Internal Audit</option><option>Admin</option></select></div>
+          <div><label for="umStatus">Status</label>
+            <select class="select" id="umStatus"><option value="1">Active</option><option value="0">Inactive</option></select></div>
+        </div>
+        <label for="umEmail">Email *</label>
+        <input id="umEmail" type="email" placeholder="name@sarlogisolutions.com or @sartransport.com" required>
+      </div>
+      <div class="tf-foot">
+        <span id="umMsg"></span>
+        <button type="button" class="btn-soft" id="umCancel">Cancel</button>
+        <button type="submit" class="btn-refresh" id="umSave">Save</button>
+      </div>
+    </form>
+  </div>
   <div class="modal hidden" id="ticketModal" role="dialog" aria-modal="true" aria-labelledby="tfTitle">
     <form class="modal-box tf-box" id="ticketForm" autocomplete="off">
       <div class="modal-head">
@@ -1862,8 +1913,8 @@ function showView(view) {
   document.querySelectorAll("#btReports [data-report]").forEach((x) => x.classList.toggle("active", !admin && x.dataset.report === bt.report));
   const co = admin ? null : document.querySelector("#companyTabs button.on")?.dataset.co || company;
   const connected = !admin && !!ENTITIES[co];
-  $("pageTitle").classList.toggle("hidden", !admin || view === "status" || view === "usage");   // Usage has its own heading
-  document.querySelector(".topbar").classList.toggle("hidden", view === "usage");   // nothing to filter there   // Status shows only its filters   // company views show only the filters; the tab names the company
+  $("pageTitle").classList.toggle("hidden", !admin || view === "status" || view === "usage" || view === "admin");   // they have their own heading
+  document.querySelector(".topbar").classList.toggle("hidden", view === "usage" || view === "admin");   // nothing to filter there   // Status shows only its filters   // company views show only the filters; the tab names the company
   $("canadaContent").classList.toggle("hidden", !connected);
   $("coEmpty").classList.toggle("hidden", admin || connected);
   $("btFilters").classList.toggle("hidden", !connected);
@@ -1874,13 +1925,14 @@ function showView(view) {
 async function loadUsers(view, body, cols, render) {
   closeKpi();
   showView(view);
-  $(body).innerHTML = `<tr><td class="empty" colspan="${cols}">Loading…</td></tr>`;
+  const note = (t) => $(body).tagName === "TBODY" ? `<tr><td class="empty" colspan="${cols}">${t}</td></tr>` : `<div class="ap-empty">${t}</div>`;
+  $(body).innerHTML = note("Loading…");
   try {
     const r = await api("/api/mongo", { dataset: "users" });
     adm.users = r.users || []; adm.breakGlass = r.breakGlass || [];
     render();
   } catch (e) {
-    if (!["signed out", "no access"].includes(e.message)) $(body).innerHTML = `<tr><td class="empty" colspan="${cols}">${esc(e.message)}</td></tr>`;
+    if (!["signed out", "no access"].includes(e.message)) $(body).innerHTML = note(esc(e.message));
   }
 }
 const openAdmin = () => loadUsers("admin", "admBody", 7, renderUsers);
@@ -1889,24 +1941,58 @@ const plural = (k, one, many) => `${fmtInt(k)} ${k === 1 ? one : many}`;
 
 const fmtSignIn = (v) => { if (!v) return "—"; const d = new Date(v); return isNaN(d) ? "—" : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
 
+// Admin Panel: one card per user, grouped by role (Admins first); each group ends with a "+ Add" card for that role.
+// Edit (pencil) opens the user form; you can't change your own role or status, or remove yourself.
+const ROLE_GROUPS = [["Admin", "Administration"], ["Strategy", "Strategy"], ["Internal Audit", "Internal Audit"], ["Viewer", "Viewer"]];
+const roleOf = (u) => ROLE_NAMES.find((r) => r.toLowerCase() === String(u.role || "").trim().toLowerCase()) || "Viewer";
+const isSelf = (u) => String(u.email).toLowerCase() === String(me.email).toLowerCase();
+const initialsOf = (s) => { const p = String(s || "?").trim().split(/[\s@.]+/).filter(Boolean); return ((p[0] || "?")[0] + (p[1] ? p[1][0] : "")).toUpperCase(); };
+const avColorOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return AV_COLORS[Math.abs(h) % AV_COLORS.length]; };
+const PEN = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m10.5 2.5 3 3L6 13l-3.5.5L3 10z"/></svg>';
+const BIN = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 4h11M6 4V2.5h4V4M4 4l.7 9.5h6.6L12 4"/></svg>';
 function renderUsers() {
   const q = $("admSearch").value.trim().toLowerCase();
-  const rows = adm.users.filter((u) => !q || [u.name, u.email, u.role].some((v) => String(v || "").toLowerCase().includes(q)));
-  const active = adm.users.filter((u) => u.active !== false).length;
-  $("admCount").textContent = `${plural(adm.users.length, "user", "users")} · ${fmtInt(active)} active`;
-  const self = (u) => String(u.email).toLowerCase() === String(me.email).toLowerCase();
-  $("admBody").innerHTML = rows.length ? rows.map((u, i) => {
-    const role = ROLE_NAMES.find((r) => r.toLowerCase() === String(u.role || "").trim().toLowerCase()) || "Viewer";
-    const e = esc(u.email);
-    return `<tr data-email="${e}">
-      <td>${i + 1}</td><td>${esc(u.name || "")}</td><td>${e}${self(u) ? ' <span class="muted">(you)</span>' : ""}</td>
-      <td><select data-act="role" ${self(u) ? "disabled" : ""}>${ROLE_NAMES.map((r) => `<option${r === role ? " selected" : ""}>${r}</option>`).join("")}</select></td>
-      <td><input type="checkbox" data-act="active" ${u.active !== false ? "checked" : ""} ${self(u) ? "disabled" : ""} aria-label="Active"></td>
-      <td class="muted">${esc(u.addedBy || "—")}</td>
-      <td>${self(u) ? "" : '<button type="button" class="link" data-act="delete">Remove</button>'}</td></tr>`;
-  }).join("") : `<tr><td class="empty" colspan="7">${adm.users.length ? "No users match." : "No users yet. Add the first one above."}</td></tr>`;
+  const rows = adm.users.filter((u) => !q || [u.name, u.email, roleOf(u)].some((v) => String(v || "").toLowerCase().includes(q)));
+  $("admCount").textContent = `${fmtInt(rows.length)} of ${plural(adm.users.length, "user", "users")}`;
+  const card = (u) => {
+    const role = roleOf(u), c = ROLE_COLORS[role], who = u.name || u.email, e = esc(u.email);
+    return `<div class="ap-card${u.active === false ? " off" : ""}" data-email="${e}">
+      <div class="ap-top"><div class="ap-av" style="background:${avColorOf(who)}">${esc(initialsOf(who))}</div>
+        <div class="ap-who"><div class="ap-name" title="${esc(who)}">${esc(who)}${isSelf(u) ? '<span class="ap-you">You</span>' : ""}</div>
+          <div class="ap-mail" title="${e}">${e}</div></div></div>
+      <div class="ap-foot"><span class="ap-badges"><span class="ua-role" style="background:${c.bg};color:${c.color};border-color:${c.border}">${role}</span>${u.active === false ? '<span class="ua-role ua-off">Inactive</span>' : ""}</span>
+        <span class="ap-acts"><button type="button" class="ap-act" data-act="edit" title="Edit" aria-label="Edit ${esc(who)}">${PEN}</button>${isSelf(u) ? "" :
+          `<button type="button" class="ap-act del" data-act="delete" title="Remove" aria-label="Remove ${esc(who)}">${BIN}</button>`}</span></div>
+    </div>`;
+  };
+  const groups = ROLE_GROUPS.map(([role, label]) => {
+    const us = rows.filter((u) => roleOf(u) === role).sort((a, b) => (isSelf(b) - isSelf(a)) || String(a.name || a.email).localeCompare(String(b.name || b.email)));
+    if (!us.length && q) return "";
+    return `<div class="ap-group">${label}</div><div class="ap-cards">${us.map(card).join("")}
+      <button type="button" class="ap-new" data-add="${role}">+ Add</button></div>`;
+  }).join("");
+  $("admBody").innerHTML = groups || `<div class="ap-empty">${adm.users.length ? "No users found." : "No users yet."}</div>`;
 }
 
+// The user form: Add User / "+ Add" (role preset) or the pencil (edit; the email can't change)
+let umEditing = null;
+function openUserForm(u, role) {
+  umEditing = u || null;
+  $("umTitle").textContent = u ? "Edit User" : "Add User";
+  $("umSub").textContent = u ? u.email : "They can sign in once added";
+  $("umName").value = u ? u.name || "" : "";
+  $("umEmail").value = u ? u.email : "";
+  $("umEmail").disabled = !!u;
+  $("umRole").value = u ? roleOf(u) : role || "Viewer";
+  $("umStatus").value = u && u.active === false ? "0" : "1";
+  const self = !!u && isSelf(u);
+  $("umRole").disabled = $("umStatus").disabled = self;   // you can't demote or switch yourself off
+  $("umMsg").textContent = self ? "You can't change your own role or status." : "";
+  $("umMsg").style.color = self ? "var(--ink-faint)" : "";
+  $("userModal").classList.remove("hidden");
+  (u ? $("umName") : $("umName")).focus();
+}
+const closeUserForm = () => $("userModal").classList.add("hidden");
 // ============================================================ Status: monthly audit checklist
 // Audit points marked "Checklist vs Metric = Yes" in the audit sheet. Section A's other points and
 // section C are still to be added.
@@ -2257,24 +2343,31 @@ document.querySelectorAll(".nav-sec > .nav-toggle").forEach((b) => {
 });
 $("sysToggle").onclick = () => { const c = $("sysNav").classList.toggle("collapsed"); $("sysToggle").setAttribute("aria-expanded", String(!c)); };
 $("admSearch").oninput = renderUsers;
-$("admAdd").onsubmit = async (e) => {
+$("admAddBtn").onclick = () => openUserForm(null);
+$("umClose").onclick = $("umCancel").onclick = closeUserForm;
+$("userModal").onclick = (e) => { if (e.target === $("userModal")) closeUserForm(); };
+$("userModal").addEventListener("keydown", (e) => { if (e.key === "Escape") closeUserForm(); });
+$("userForm").onsubmit = async (e) => {
   e.preventDefault();
-  const email = $("admEmail").value.trim().toLowerCase();
-  if (adm.users.some((u) => String(u.email).toLowerCase() === email)) { admMsg(`${email} is already on the list.`, false); return; }
-  await saveUser({ email, name: $("admName").value.trim(), role: $("admRole").value, active: true }, `${email} added. They can sign in now.`);
-  if ($("admMsg").className === "ok") { $("admEmail").value = ""; $("admName").value = ""; $("admRole").value = "Viewer"; }
-};
-$("admBody").onchange = (e) => {
-  const tr = e.target.closest("tr[data-email]"), act = e.target.dataset.act;
-  if (!tr || !["role", "active"].includes(act)) return;
-  const u = adm.users.find((x) => x.email === tr.dataset.email);
-  if (!u) return;
-  const next = { ...u, role: act === "role" ? e.target.value : u.role, active: act === "active" ? e.target.checked : u.active !== false };
-  saveUser(next, act === "role" ? `${u.email} is now ${next.role}.` : `${u.email} ${next.active ? "can sign in again" : "can no longer sign in"}.`);
+  const email = (umEditing ? umEditing.email : $("umEmail").value.trim()).toLowerCase();
+  if (!umEditing && adm.users.some((u) => String(u.email).toLowerCase() === email)) {
+    $("umMsg").style.color = ""; $("umMsg").textContent = `${email} is already on the list.`; return;
+  }
+  const next = { ...(umEditing || {}), email, name: $("umName").value.trim(), role: $("umRole").value, active: $("umStatus").value === "1" };
+  $("umSave").disabled = true;
+  closeUserForm();
+  await saveUser(next, umEditing ? `${email} updated.` : `${email} added. They can sign in now.`);
+  $("umSave").disabled = false;
 };
 $("admBody").onclick = async (e) => {
-  if (e.target.dataset.act !== "delete") return;
-  const email = e.target.closest("tr[data-email]").dataset.email;
+  const add = e.target.closest("[data-add]");
+  if (add) return openUserForm(null, add.dataset.add);
+  const b = e.target.closest("[data-act]");
+  if (!b) return;
+  const email = b.closest("[data-email]").dataset.email;
+  const u = adm.users.find((x) => x.email === email);
+  if (b.dataset.act === "edit") return u && openUserForm(u);
+  if (b.dataset.act !== "delete") return;
   if (!confirm(`Remove ${email} from the user list? They won't be able to sign in.`)) return;
   try { await api("/api/mongo", { dataset: "deleteUser", email }); admMsg(`${email} removed.`, true); }
   catch (err) { if (!["signed out", "no access"].includes(err.message)) admMsg(err.message, false); }
