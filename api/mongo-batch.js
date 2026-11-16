@@ -365,7 +365,10 @@ async function seaOpsData(db, entity) {
 const JOB_DETAIL_FIELDS = ["shipmentId", "etdEtaNew", "periodDate", "location", "jobBranch", "branch", "jobOwner", "operator",
   "salesPerson", "customer", "cargoType", "etdLoadingPort", "etaDischarge", "jobDate", "loadingPort", "originPortCountry",
   "dischargePort", "destinationCountry", "houseNo", "consolNo", "carrierNumber", "carrier", "masterNo", "consignee", "shipper",
-  "toiIncoTerms", "lob", "direction"];
+  "toiIncoTerms", "lob", "direction",
+  // SAR USA GP% pop-ups
+  "provisionalRevenueA", "billedRevenueC", "unbilledRevenueD=aC", "provisionalCostE", "postedCostG", "unpostedCostH=EG",
+  "provisionalProfitI=aE", "actualProfitJ=cG"];
 const CA_CHARGE_FIELDS = ["jobNo", "lob", "lob2", "etdEtaNew", "etdEta", "charge", "unbilledRevenue", "unpostedCost", "unbilledCost",
   "jobDate", "receivableFrom", "payableTo", "organization", "jobOwner", "salesPerson", "location", "operationLockDate",
   "estimatedRevenue", "bookedRevenue", "actualRevenue", "estimatedCost", "bookedCost", "actualCost", "estimatedProfit",
