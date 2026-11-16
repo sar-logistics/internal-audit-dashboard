@@ -1200,6 +1200,31 @@ function filterLabel() {
   return `${short} · ${lob || "All LOBs"}`;
 }
 
+// KPI numbers count up to their value: from 0 when the dashboard loads, else from the number shown, whenever
+// the value changes (company, period or LOB). Skipped when the viewer asks for reduced motion.
+const fmtPct = (n) => `${n.toFixed(1)}%`;
+const fmtCount = (n) => fmtInt(Math.round(n));
+const COUNT_MS = 900;
+const reduceMotion = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+function countTo(el, value, fmt) {
+  if (value === null) { cancelAnimationFrame(el._raf); el._to = null; el.textContent = "–"; return; }
+  // a currency switch shows the same figure in another unit: redraw it, don't count
+  const unit = fmt === fmtMoney ? currency() : "";
+  if (el._to === value && el._unit === unit) return;
+  const sameFigure = el._to === value;   // only the currency changed
+  const from = typeof el._now === "number" && el._unit === unit ? el._now : 0;
+  el._to = value; el._unit = unit;
+  cancelAnimationFrame(el._raf);
+  if (reduceMotion || sameFigure || from === value) { el._now = value; el.textContent = fmt(value); return; }
+  const start = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / COUNT_MS), e = 1 - Math.pow(1 - k, 3);   // ease out
+    el._now = k < 1 ? from + (value - from) * e : value;
+    el.textContent = fmt(el._now);
+    if (k < 1) el._raf = requestAnimationFrame(step);
+  };
+  el._raf = requestAnimationFrame(step);
+}
 function renderKpis() {
   const eva = inFilters("eva"), jobs = inFilters("jobs");
   const sum = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
@@ -1207,26 +1232,26 @@ function renderKpis() {
   const open = jobs.filter(KPI_VIEWS.oj.flag).length;
   const period = filterState().range;
   document.querySelectorAll(".kpi-row.rep").forEach((row) => row.classList.toggle("hidden", row.dataset.for !== bt.report));
-  $("kTj").textContent = fmtInt(jobs.length);
+  countTo($("kTj"), jobs.length, fmtCount);
   $("kTjSub").textContent = period;
-  $("kOj").textContent = fmtInt(open);
+  countTo($("kOj"), open, fmtCount);
   $("kOjSub").textContent = ent().openNote || "Not yet operation-locked";
-  $("kOjPct").textContent = jobs.length ? `${(open / jobs.length * 100).toFixed(1)}%` : "–";
+  countTo($("kOjPct"), jobs.length ? open / jobs.length * 100 : null, fmtPct);
   $("kOjPctSub").textContent = `${fmtInt(open)} of ${fmtInt(jobs.length)} job${jobs.length === 1 ? "" : "s"}`;
   const finPending = jobs.filter(KPI_VIEWS.fp.flag).length;
-  $("kFp").textContent = fmtInt(finPending);
+  countTo($("kFp"), finPending, fmtCount);
   $("kFpSub").textContent = ent().finNote || "No financial lock date";
-  $("kFpPct").textContent = jobs.length ? `${(finPending / jobs.length * 100).toFixed(1)}%` : "–";
+  countTo($("kFpPct"), jobs.length ? finPending / jobs.length * 100 : null, fmtPct);
   $("kFpPctSub").textContent = `${fmtInt(finPending)} of ${fmtInt(jobs.length)} job${jobs.length === 1 ? "" : "s"}`;
-  $("kFpTotal").textContent = fmtInt(jobs.length);
+  countTo($("kFpTotal"), jobs.length, fmtCount);
   $("kFpTotalSub").textContent = period;
-  $("kRvAmt").textContent = fmtMoney(sum(ur, "unbilledRevenue"));
+  countTo($("kRvAmt"), sum(ur, "unbilledRevenue"), fmtMoney);
   $("kRvAmtSub").textContent = period;
-  $("kRvCnt").textContent = fmtInt(ur.length);
+  countTo($("kRvCnt"), ur.length, fmtCount);
   $("kRvCntSub").textContent = ent().revNote || "Unbilled Revenue ≠ 0";
-  $("kCsAmt").textContent = fmtMoney(sum(uc, "unpostedCost"));
+  countTo($("kCsAmt"), sum(uc, "unpostedCost"), fmtMoney);
   $("kCsAmtSub").textContent = period;
-  $("kCsCnt").textContent = fmtInt(uc.length);
+  countTo($("kCsCnt"), uc.length, fmtCount);
   $("kCsCntSub").textContent = ent().costNote || "Unposted Cost ≠ 0";
 }
 
