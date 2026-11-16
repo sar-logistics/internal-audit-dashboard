@@ -1454,6 +1454,7 @@ const KPI_VIEWS = {
   ur: { title: "Unbilled Revenue",       pool: "eva",  flag: (r) => !!r.revFlag,  drill: "rev" },
   uc: { title: "Unposted Cost",          pool: "eva",  flag: (r) => !!r.costFlag, drill: "cost" },
 };
+const DETAIL_BATCH = 2000;   // jobs per pop-up detail call (the API takes up to 5,000)
 const km = { rows: [], drill: null, req: 0, filters: {}, sort: null };   // sort: { key, dir: 1 | -1 }
 
 function openKpi(key) {
@@ -1489,9 +1490,17 @@ async function openDrill(title, drill, summaryRows, subtitle) {
   const jobNos = [...new Set(summaryRows.map((r) => r.jobNo))];
   if (!jobNos.length) { if (req === km.req) renderKpiRows(); return; }
   try {
-    const { rows } = drill.kind === "jobs"
-      ? await api("/api/mongo-batch", { dataset: "jobDetails", entity: ent().dataset, jobNos })
-      : await api("/api/mongo-batch", { dataset: "chargeLines", entity: ent().dataset, jobNos, kind: drill.kind });
+    // Asked for in batches of DETAIL_BATCH jobs, a few at a time, so a big list stays under the API's per-call limit
+    const ask = (part) => drill.kind === "jobs"
+      ? api("/api/mongo-batch", { dataset: "jobDetails", entity: ent().dataset, jobNos: part })
+      : api("/api/mongo-batch", { dataset: "chargeLines", entity: ent().dataset, jobNos: part, kind: drill.kind });
+    const parts = [];
+    for (let i = 0; i < jobNos.length; i += DETAIL_BATCH) parts.push(jobNos.slice(i, i + DETAIL_BATCH));
+    const rows = [];
+    for (let i = 0; i < parts.length; i += 3) {
+      (await Promise.all(parts.slice(i, i + 3).map(ask))).forEach((r) => rows.push(...(r.rows || [])));
+      if (req !== km.req) return;
+    }
     if (req !== km.req) return;   // another pop-up was opened meanwhile
     km.rows = rows.map((c) => drill.kind === "jobs"
       ? { ...c, shipmentId: String(c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.periodDate || "",
