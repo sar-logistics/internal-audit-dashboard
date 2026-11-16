@@ -27,7 +27,9 @@
 //   like SAR USA. Open = no Operation Lock Date and ETD/ETA New + 7 days has passed. Revenue Not
 //   Billed = unbilled revenue ≥ 1 and ETD/ETA New more than 3 days ago. Cost Not Posted = unposted
 //   cost ≥ 1 and the job is operation-locked. Days count from midnight IST. Amounts are in INR.
-// STSPL Ocean — the same rules as STSPL air, over database sar-in-sea-export-staging: jobs in
+// STSPL Ocean — the STSPL air rules, over database sar-in-sea-export-staging (Open = the Sea Export Ops
+//   dashboard's Ops Lock Pendency: no Operation Lock Date and the IST calendar day of ETD/ETA New › Job
+//   Date + 7 days is today or earlier): jobs in
 //   sea_jobs_export and sea_jobs_import (job number = shipmentNo), charge lines in sea_export_etdeta
 //   (job number = jobNo; LOB FFWD SEA EXP / IMP read as Sea Export / Import). Amounts are in INR.
 // SAR Indonesia — same rules as the SAR Indonesia Sea Ops dashboard (database sar-id-ops):
@@ -172,7 +174,7 @@ const US_LIKE = {
   usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd" },
   stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr" },
   stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "",
-              jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob",
+              jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob", openByDay: true,
               lobOf: { "FFWD SEA EXP": "SEA EXPORT", "FFWD SEA IMP": "SEA IMPORT" } },
 };
 const jobKeyOf = (cfg) => cfg.jobKey || "shipmentId";
@@ -189,6 +191,9 @@ const US_LOB_RE = /^(SEA|AIR|ROAD) (EXPORT|IMPORT)$/;
 const titleCase = (s) => String(s).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 // Air: Ops Lock Pendency (ETD+7) = not operation-locked and ETD/ETA New + 7 days has passed
 const isAirOpen = (d, today) => { const t = timeOf(d.etdEtaNew); return !filled(d.operationLockDate) && t !== null && today >= t + 7 * 864e5; };
+// Ocean (isOpsLockPending in the Sea Export Ops dashboard): the IST day of ETD/ETA New › Job Date, + 7 days, is today or before
+const istDay = (t) => Math.floor((t + IST_MS) / 864e5) * 864e5 - IST_MS;
+const isSeaOpen = (d, today) => { const t = timeOf(d.etdEtaNew || d.jobDate); return !filled(d.operationLockDate) && t !== null && today >= istDay(t) + 7 * 864e5; };
 
 // One row per job in usa_ops_jobs, as the USA dashboard reads them: branch = jobBranch › branch ›
 // location, owner = operator › jobOwner, period = ETD/ETA New › Job Date, open = no Operation Lock Date.
@@ -205,7 +210,7 @@ async function usaJobs(db, cfg) {
       String(d[jobKeyOf(cfg)] ?? ""), direction, lob,
       d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
       d.etdEtaNew || d.jobDate || "",
-      cfg.air ? isAirOpen(d, today) : !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
+      cfg.openByDay ? isSeaOpen(d, today) : cfg.air ? isAirOpen(d, today) : !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
     ];
   }) };
 }
