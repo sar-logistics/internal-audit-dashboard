@@ -311,6 +311,15 @@
   .dd-pop .dd-opt.hot { background: #E5EDF7; color: #1F3A6E; }
   .dd-pop .dd-opt.on { background: linear-gradient(135deg, #2D5A8E, #1F3A6E); color: #fff; }
   .dd-pop .dd-opt.on::before { content: "✓"; font-size: 12px; }
+  /* checklist status menu: a dot in each status's colour (the tick still marks the current one) */
+  .dd-pop.ck { min-width: 130px !important; }
+  .dd-pop.ck .dd-opt { font-weight: 600; }
+  .dd-pop.ck .dd-opt::after { content: ""; order: -1; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; background: #CBD5E1; }
+  .dd-pop.ck .dd-opt[data-st="Done"]::after  { background: #1F8A4C; }
+  .dd-pop.ck .dd-opt[data-st="WIP"]::after   { background: #E39A1B; }
+  .dd-pop.ck .dd-opt[data-st="Issue"]::after { background: #C0392B; }
+  .dd-pop.ck .dd-opt[data-st=""] { color: var(--ink-faint); font-weight: 500; }
+  .dd-pop.ck .dd-opt.on[data-st=""] { color: #fff; }
   .cf-list { max-height: 260px; overflow: auto; padding: 0 6px 6px; }
   .cf-list label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; font-size: 13px; border-radius: 6px; cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink); }
   .cf-list label:hover { background: var(--paper); }
@@ -2546,7 +2555,7 @@ document.querySelector(".sidebar").addEventListener("click", (e) => {
 // Dropdowns: a mouse click opens a styled menu instead of the browser's own list. The <select> stays the
 // source of truth: picking sets its value and fires "change", so every handler works as before. Touch
 // screens keep the phone's native picker.
-const DD_SEL = ".select, .adm-add select, .adm-tbl select";
+const DD_SEL = ".select, .adm-add select, .adm-tbl select, .ck-st";   // .ck-st: the checklist's status cells
 const dd = { sel: null, hot: -1 };
 function closeDropdown() {
   if (!dd.sel) return;
@@ -2562,8 +2571,9 @@ function paintDropdown() {
 function openDropdown(sel) {
   dd.sel = sel; dd.hot = sel.selectedIndex;
   const pop = $("ddPop");
+  pop.classList.toggle("ck", sel.classList.contains("ck-st"));   // status dots, in the cells' colours
   pop.innerHTML = [...sel.options].map((o, i) =>
-    `<div class="dd-opt${i === sel.selectedIndex ? " on" : ""}" role="option" data-i="${i}" aria-selected="${i === sel.selectedIndex}">${esc(o.text)}</div>`).join("");
+    `<div class="dd-opt${i === sel.selectedIndex ? " on" : ""}" role="option" data-i="${i}" data-st="${esc(o.value)}" aria-selected="${i === sel.selectedIndex}">${esc(o.value ? o.text : "— Not set")}</div>`).join("");
   pop.classList.remove("hidden");
   const r = sel.getBoundingClientRect();
   pop.style.minWidth = `${r.width}px`;
