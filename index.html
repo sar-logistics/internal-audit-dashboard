@@ -986,7 +986,7 @@ $("caRefresh").onclick = () => loadCompany(true);
 //   Cost Not Posted:    estimatedvsactual jobs whose summed unposted cost is > 0
 //   Finance Pendency:   jobs with no Financial Lock Date (finPending from api/mongo-batch.js)
 //   GP% < 3% / > 20%:   Job Profitability. GP% = Job Profit ÷ Total Income (gpProfit / gpIncome from
-//                       api/mongo-batch.js), so far only for Indonesia and Thailand; jobs with no income are left out
+//                       api/mongo-batch.js), so far for Indonesia, Thailand and SAR USA; jobs with no income are left out
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
 const AV_COLORS = ["#3F6E1E", "#1F3A6E", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
@@ -1275,7 +1275,7 @@ function renderBranchTable() {
 
   const inRange = inFilters(rep.pool);
   const flagged = inRange.filter(rep.flag);
-  // GP% is worked out only where its rule is set (Indonesia, Thailand so far)
+  // GP% is worked out only where its rule is set (Indonesia, Thailand, SAR USA so far)
   if (rep.gp && !bt.jobs.some((r) => typeof r.gpIncome === "number")) {
     $("btCount").textContent = "";
     $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th></tr>`;
@@ -1502,6 +1502,9 @@ DRILLS_BY_DATASET.stsplsea = {
 const ID_COLS_GP = [...colList("shipmentId:Shipment ID;gpIncome:Total Income:n;gpExpense:Total Expense:n;gpProfit:Job Profit:n"), { key: "gpPct", label: "GP%", num: true, pct: true },
                     ...ID_COLS_TOTAL_JOBS.slice(1)];
 DRILLS_BY_DATASET.indonesia.gpLow = DRILLS_BY_DATASET.indonesia.gpHigh = { kind: "jobs", cols: ID_COLS_GP, gp: true };
+// SAR USA: the same GP columns, plus which figures were used (financial lock done or not), then the USA job columns
+const US_COLS_GP = [...ID_COLS_GP.slice(0, 5), { key: "gpBasis", label: "GP Basis" }, ...US_COLS_TOTAL_JOBS.slice(1)];
+DRILLS_BY_DATASET.usa.gpLow = DRILLS_BY_DATASET.usa.gpHigh = { kind: "jobs", cols: US_COLS_GP, gp: true };
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
 Object.values(DRILLS_BY_DATASET).forEach((d) => { d.fin = d.open; });   // Finance Pendency pop-ups: the Open Jobs columns
 const drills = () => DRILLS_BY_DATASET[ent().dataset];
@@ -1563,7 +1566,8 @@ async function openDrill(title, drill, summaryRows, subtitle) {
     // GP% pop-ups: Total Income, Job Profit and GP% come from the table's rows
     const gpOf = drill.gp ? new Map(summaryRows.map((r) => [String(r.jobNo), r])) : null;
     if (gpOf) rows.forEach((c) => { const g = gpOf.get(String(c.shipmentId ?? "")) || {};
-                                    Object.assign(c, { gpIncome: g.gpIncome, gpExpense: g.gpExpense, gpProfit: g.gpProfit, gpPct: g.gpPct }); });
+                                    Object.assign(c, { gpIncome: g.gpIncome, gpExpense: g.gpExpense, gpProfit: g.gpProfit, gpPct: g.gpPct,
+                                                      gpBasis: g.gpBasis }); });
     km.rows = rows.map((c) => drill.kind === "jobs"
       ? { ...c, shipmentId: String(c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.periodDate || "",
           location: c.location || c.jobBranch || c.branch || "", jobOwner: c.jobOwner || c.operator || "" }

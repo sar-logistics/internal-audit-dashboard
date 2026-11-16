@@ -48,6 +48,9 @@
 //   import jobs that don't carry it, the revenue + WIP of its th_ops_wip lines. Total Expense likewise: the job's
 //   own total or its lines' cost + accrual, sent as a positive amount (stored negative; income − expense = profit).
 //   Sent as gpIncome / gpExpense / gpProfit.
+// Job Profitability (SAR USA, usa_ops_jobs): financial lock done → income = Billed Revenue (C), expense = Posted
+//   Cost (G); not done → income = max(Provisional Revenue A, Unbilled Revenue D), expense = max(Provisional Cost E,
+//   Unposted Cost H). Profit = income − expense; gpBasis says which one was used.
 // Financial Lock Pending: Indonesia / Thailand = job status is not CLS; the others = no financial lock date.
 // Operation Lock Pending = the job has no lock date.
 //
@@ -179,7 +182,7 @@ async function canadaData(db) {
 // collections. jobKey / lineKey: the job number field of the jobs / charge lines (default shipmentId); lobOf
 // maps the charge lines' LOB to SEA|AIR|ROAD EXPORT|IMPORT; cur: the suffix of the charge lines' amount fields.
 const US_LIKE = {
-  usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd" },
+  usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd", gp: true },
   stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr" },
   stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "",
               jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob", openByDay: true,
@@ -210,8 +213,8 @@ async function usaJobs(db, cfg) {
   const docs = (await Promise.all(cfg.jobs.map((name) => db.collection(name)
     .find({}, { projection: { _id: 0, [jobKeyOf(cfg)]: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1,
                               jobOwner: 1, etdEtaNew: 1, jobDate: 1, operationLockDate: 1, operationLock: 1,
-                              financialLockDate: 1, financialLock: 1 } }).toArray()))).flat();
-  return { fields: JOB_FIELDS, rows: docs.map((d) => {
+                              financialLockDate: 1, financialLock: 1, ...(cfg.gp ? USA_GP_PROJECTION : {}) } }).toArray()))).flat();
+  return { fields: cfg.gp ? [...JOB_FIELDS, "gpIncome", "gpProfit", "gpExpense", "gpBasis"] : JOB_FIELDS, rows: docs.map((d) => {
     const lob = String(d.lob || "").trim().toUpperCase();
     const direction = d.direction || (/EXPORT/.test(lob) ? "Export" : /IMPORT/.test(lob) ? "Import" : titleCase(lob.split(" ").pop() || ""));
     return [
@@ -219,8 +222,18 @@ async function usaJobs(db, cfg) {
       d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
       d.etdEtaNew || d.jobDate || "",
       cfg.openByDay ? isSeaOpen(d, today) : cfg.air ? isAirOpen(d, today) : !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
+      ...(cfg.gp ? usaGp(d) : []),
     ];
   }) };
+}
+const USA_GP_PROJECTION = { billedRevenueC: 1, postedCostG: 1, provisionalRevenueA: 1, "unbilledRevenueD=aC": 1,
+                            provisionalCostE: 1, "unpostedCostH=EG": 1 };
+// [income, profit, expense, basis] for the GP% reports
+function usaGp(d) {
+  const locked = !finPendingOf(d);
+  const income = locked ? toNum(d.billedRevenueC) : Math.max(toNum(d.provisionalRevenueA), toNum(d["unbilledRevenueD=aC"]));
+  const expense = locked ? toNum(d.postedCostG) : Math.max(toNum(d.provisionalCostE), toNum(d["unpostedCostH=EG"]));
+  return [round2(income), round2(income - expense), round2(expense), locked ? "Billed − Posted (FL done)" : "Provisional / Unbilled (FL not done)"];
 }
 
 // One row per shipment and LOB in usa_ops_etdeta (groupEtdEtaByShipment in the USA dashboard):
