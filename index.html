@@ -1507,7 +1507,10 @@ DRILLS_BY_DATASET.indonesia.gpLow = DRILLS_BY_DATASET.indonesia.gpHigh = { kind:
 // (SAR Canada: the same columns from ca_ops_*, whose field names have no letter)
 const GP_LABELS = ["Provisional Revenue (A)", "Billed Revenue (C)", "Unbilled Revenue (D = A − C)", "Provisional Cost (E)",
   "Posted Cost (G)", "Unposted Cost (H = E − G)", "Provisional Profit (I = A − E)", "Actual Profit (J = C − G)"];
+// Revenue and GP: the income and profit the GP% is worked out from (FL done: billed / billed − posted; else the
+// provisional / unbilled maximums)
 const gpCols = (keys, jobCols) => [ID_COLS_GP[0], ...keys.map((key, i) => ({ key, label: GP_LABELS[i], num: true })),
+  { key: "gpIncome", label: "Revenue", num: true }, { key: "gpProfit", label: "GP", num: true },
   ID_COLS_GP.find((c) => c.pct), ...jobCols.slice(1)];
 const US_COLS_GP = gpCols(["provisionalRevenueA", "billedRevenueC", "unbilledRevenueD=aC", "provisionalCostE", "postedCostG",
   "unpostedCostH=EG", "provisionalProfitI=aE", "actualProfitJ=cG"], US_COLS_TOTAL_JOBS);
