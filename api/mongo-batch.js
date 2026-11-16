@@ -42,6 +42,9 @@
 //     WIP lines are in th_ops_wip. Amounts are in IDR.
 // SAR Thailand — the SAR Thailand Sea Ops dashboard has the same rules as Indonesia (database
 //   sar-th-ops; cross trade in th_ops_crosstrade). Amounts are in THB.
+// Job Profitability (Indonesia / Thailand): GP% = Job Profit ÷ Total Income (recognized + unrecognized revenue
+//   + WIP). Job Profit is the job's jobProfit; Total Income is the job's own total (cross trade) or, for export /
+//   import jobs that don't carry it, the revenue + WIP of its th_ops_wip lines. Sent as gpIncome / gpProfit.
 // Financial Lock Pending: Indonesia / Thailand = job status is not CLS; the others = no financial lock date.
 // Operation Lock Pending = the job has no lock date.
 //
@@ -274,6 +277,7 @@ const SEA_JOB_COLLECTIONS = {
   thailand:  ["th_ops_export", "th_ops_import", "th_ops_crosstrade"],
 };
 const ID_WIP = "th_ops_wip";
+const GP_INCOME = "totalIncomeRecognized+unrecognizedRev+wip";   // only the cross-trade collections carry it
 const DAY = 864e5;
 const idDirection = (d) => {   // getRecordDirection in the Indonesia dashboard: 2nd letter of the LOB code
   const c = String(d.lob || "").toUpperCase().charAt(1);
@@ -290,23 +294,25 @@ async function seaOpsData(db, entity) {
     Promise.all(SEA_JOB_COLLECTIONS[entity].map((name) => db.collection(name)
       .find({}, { projection: { _id: 1, shipmentId: 1, lob: 1, direction: 1, jobBranch: 1, branch: 1, operator: 1, jobOwner: 1,
                                 originEtd: 1, destinationEta: 1, jobOpenedDate: 1, jobStatus: 1, operationLock: 1,
-                                operationsLockedOn: 1, financialLock: 1, financialsLockedOn: 1 } }).toArray())).then((a) => a.flat()),
-    db.collection(ID_WIP).find({}, { projection: { _id: 1, shipmentId: 1, wip: 1, accrual: 1 } }).toArray(),
+                                operationsLockedOn: 1, financialLock: 1, financialsLockedOn: 1, jobProfit: 1,
+                                [GP_INCOME]: 1 } }).toArray())).then((a) => a.flat()),
+    db.collection(ID_WIP).find({}, { projection: { _id: 1, shipmentId: 1, wip: 1, accrual: 1, revenue: 1 } }).toArray(),
   ]);
   // WIP > 0 lines and accrual ≠ 0 lines per shipment, as renderUnbilledRev / renderUnpostedCost build them
   const byJob = new Map();
   for (const w of wip) {
     const job = String(w.shipmentId ?? "").trim();
     if (!job) continue;
-    const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0 };
+    const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0, income: 0 };
     const wv = toNum(w.wip), av = toNum(w.accrual);
+    t.income += toNum(w.revenue) + wv;   // every line's revenue + WIP: the job's total income
     if (wv > 0) { t.wip += wv; t.wipLines++; }
     if (av !== 0) { t.accrual += av; t.accLines++; }
     byJob.set(job, t);
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const cut3 = new Date(today - 3 * DAY), cut7 = new Date(today - 7 * DAY);
-  const jobs = { fields: JOB_FIELDS, rows: [] }, evaJobs = { fields: EVA_JOB_FIELDS, rows: [] };
+  const jobs = { fields: [...JOB_FIELDS, "gpIncome", "gpProfit"], rows: [] }, evaJobs = { fields: EVA_JOB_FIELDS, rows: [] };
   for (const d of jobDocs) {
     const job = String(d.shipmentId ?? "").trim();
     const direction = idDirection(d);
@@ -317,10 +323,11 @@ async function seaOpsData(db, entity) {
     const closed = status === "CMP" || status === "CLS";
     const base = [job, direction, String(d.lob || "").toUpperCase(), d.jobBranch || d.branch || "(No Branch)",
                   d.operator || d.jobOwner || "(Unknown)", period];
+    const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0, income: 0 };
     jobs.rows.push([...base, !closed && !!threshold && threshold < cut7,
                     status !== "CLS",   // financial lock not done = job status is not CLS
-                    !(filled(d.operationsLockedOn) || filled(d.operationLock))]);
-    const t = byJob.get(job) || { wip: 0, wipLines: 0, accrual: 0, accLines: 0 };
+                    !(filled(d.operationsLockedOn) || filled(d.operationLock)),
+                    round2(filled(d[GP_INCOME]) ? toNum(d[GP_INCOME]) : t.income), round2(toNum(d.jobProfit))]);
     evaJobs.rows.push([...base, round2(t.wip), round2(-t.accrual),   // accrual is negative: unposted cost = −accrual
                        t.wipLines > 0 && !!threshold && threshold < cut3, t.accLines > 0 && !!threshold && threshold < cut7]);
   }

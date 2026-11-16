@@ -552,11 +552,11 @@
       <button type="button" class="nav-label nav-toggle nav-group" aria-expanded="true">Job Profitability
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5 5 6.5 8 3.5"/></svg>
       </button>
-      <div class="nav-item" data-sys="gpLow" title="GP% < 3%">
+      <div class="nav-item" data-report="gpLow" title="GP% < 3%">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 14.5h13M2.5 4l4 4 3-3 4.5 5.5M10.5 11.5H14V8"/></svg>
         <span>GP% &lt; 3%</span>
       </div>
-      <div class="nav-item" data-sys="gpHigh" title="GP% > 20%">
+      <div class="nav-item" data-report="gpHigh" title="GP% > 20%">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 14.5h13M2.5 11l4-4 3 3 4.5-5.5M10.5 4.5H14V8"/></svg>
         <span>GP% &gt; 20%</span>
       </div>
@@ -984,6 +984,8 @@ $("caRefresh").onclick = () => loadCompany(true);
 //   Revenue Not Billed: estimatedvsactual jobs whose summed unbilled revenue is > 0
 //   Cost Not Posted:    estimatedvsactual jobs whose summed unposted cost is > 0
 //   Finance Pendency:   jobs with no Financial Lock Date (finPending from api/mongo-batch.js)
+//   GP% < 3% / > 20%:   Job Profitability. GP% = Job Profit ÷ Total Income (gpProfit / gpIncome from
+//                       api/mongo-batch.js), so far only for Indonesia and Thailand; jobs with no income are left out
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
 const AV_COLORS = ["#3F6E1E", "#1F3A6E", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
@@ -993,7 +995,13 @@ const REPORTS = {
   rev:   { title: "Revenue Not Billed", pool: "eva",  flag: (r) => !!r.revFlag,  amtKey: "unbilledRevenue" },
   cost:  { title: "Cost Not Posted",    pool: "eva",  flag: (r) => !!r.costFlag, amtKey: "unpostedCost" },
   fin:   { title: "Finance Pendency",   pool: "jobs", flag: (r) => !!r.finPending,                     count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} pending` },
+  gpLow:  { title: "GP% < 3%",  pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct < 3,  amtKey: "gpProfit",
+            count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} below 3%` },
+  gpHigh: { title: "GP% > 20%", pool: "jobs", gp: true, flag: (r) => r.gpPct !== null && r.gpPct > 20, amtKey: "gpProfit",
+            count: (n, m) => `${fmtInt(n)} total · ${fmtInt(m)} above 20%` },
 };
+// GP% per job (null when the company has no GP data yet or the job has no income)
+const gpPctOf = (r) => typeof r.gpIncome === "number" && r.gpIncome > 0 ? r.gpProfit / r.gpIncome * 100 : null;
 let lobPick = "";   // the LOB picked on any report or on Status; every page uses it when that company has the LOB
 const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, open: new Set(), shown: [], allOpen: false };
 
@@ -1077,6 +1085,7 @@ function unpack(set) {
     const d = parseDay(r.periodDate);
     Object.assign(r, d ? periodKeys(d) : { day: null, wk: null, fk: null, mk: null, yk: null });
     r.lobLabel = lobLabel(r.lob, r.direction);
+    r.gpPct = gpPctOf(r);
     return r;
   });
 }
@@ -1233,6 +1242,14 @@ function renderBranchTable() {
 
   const inRange = inFilters(rep.pool);
   const flagged = inRange.filter(rep.flag);
+  // GP% is worked out only where its rule is set (Indonesia, Thailand so far)
+  if (rep.gp && !bt.jobs.some((r) => typeof r.gpIncome === "number")) {
+    $("btCount").textContent = "";
+    $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th></tr>`;
+    setExpandButton([]);
+    $("btBody").innerHTML = `<tr><td class="empty" colspan="2">The GP% rule for ${esc(company)} isn't set yet.</td></tr>`;
+    return;
+  }
   $("btCount").textContent = rep.count ? rep.count(inRange.length, flagged.length)
                                        : `${fmtInt(inRange.length)} total · ${fmtInt(flagged.length)} flagged`;
 
@@ -1300,7 +1317,6 @@ $("btReports").onclick = (e) => {
     if (fromStatus && on && on.dataset.co !== company) on.click();
   }
   else if (e.target.closest("[data-sys=status]")) openChecklist();
-  else if (e.target.closest("[data-sys=gpLow], [data-sys=gpHigh]")) { closeKpi(); showView(e.target.closest("[data-sys]").dataset.sys); }
 };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
 ["btMonth", "btFrom", "btTo", "btFromDay", "btToDay"].forEach((id) => { $(id).onchange = renderBranchTable; });
@@ -1448,6 +1464,10 @@ DRILLS_BY_DATASET.stsplsea = {
   rev:   { kind: "rev",  cols: usEvaCols("unbilledRevenue", "Unbilled Revenue", EVA_REV_AMTS, ""), amtKey: "unbilledRevenue" },
   cost:  { kind: "cost", cols: usEvaCols("unpostedCost", "Unposted Cost", EVA_COST_AMTS, ""),     amtKey: "unpostedCost" },
 };
+// Job Profitability: the job list with Total Income, Job Profit and GP% (from the table's rows)
+const ID_COLS_GP = [...colList("shipmentId:Shipment ID;gpIncome:Total Income:n;gpProfit:Job Profit:n"), { key: "gpPct", label: "GP%", num: true, pct: true },
+                    ...ID_COLS_TOTAL_JOBS.slice(1)];
+DRILLS_BY_DATASET.indonesia.gpLow = DRILLS_BY_DATASET.indonesia.gpHigh = { kind: "jobs", cols: ID_COLS_GP, gp: true };
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
 Object.values(DRILLS_BY_DATASET).forEach((d) => { d.fin = d.open; });   // Finance Pendency pop-ups: the Open Jobs columns
 const drills = () => DRILLS_BY_DATASET[ent().dataset];
@@ -1506,6 +1526,10 @@ async function openDrill(title, drill, summaryRows, subtitle) {
       if (req !== km.req) return;
     }
     if (req !== km.req) return;   // another pop-up was opened meanwhile
+    // GP% pop-ups: Total Income, Job Profit and GP% come from the table's rows
+    const gpOf = drill.gp ? new Map(summaryRows.map((r) => [String(r.jobNo), r])) : null;
+    if (gpOf) rows.forEach((c) => { const g = gpOf.get(String(c.shipmentId ?? "")) || {};
+                                    Object.assign(c, { gpIncome: g.gpIncome, gpProfit: g.gpProfit, gpPct: g.gpPct }); });
     km.rows = rows.map((c) => drill.kind === "jobs"
       ? { ...c, shipmentId: String(c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.periodDate || "",
           location: c.location || c.jobBranch || c.branch || "", jobOwner: c.jobOwner || c.operator || "" }
@@ -1524,10 +1548,17 @@ async function openDrill(title, drill, summaryRows, subtitle) {
 function cellValue(c, r) {
   const v = r[c.key];
   if (c.date) return fmtDay(v);
+  if (c.pct) return v === undefined || v === null || v === "" ? "" : `${Number(v).toFixed(2)}%`;
   if (c.num) return v === undefined || v === null || v === "" ? "" : fmtMoney(v);
   return String(v ?? "");
 }
 const cellText = (c, r) => esc(cellValue(c, r));
+// GP% of a set of jobs: their Job Profit ÷ their Total Income
+function gpTotal(rows) {
+  let inc = 0, pro = 0;
+  rows.forEach((r) => { inc += Number(r.gpIncome) || 0; pro += Number(r.gpProfit) || 0; });
+  return inc > 0 ? `${(pro / inc * 100).toFixed(2)}%` : "";
+}
 
 function renderKpiRows() {
   const d = km.drill;
@@ -1556,7 +1587,7 @@ function renderKpiRows() {
   // Shown in every pop-up: the # cell holds the row count; job lists without amounts show just that
   $("kmFoot").innerHTML = rows.length
     ? `<tr><td>${fmtInt(rows.length)}</td>${d.cols.map((c, i) => i === 0 ? "<td>Grand Total</td>"
-      : `<td class="${c.num ? "num" : ""}">${c.num ? sumCol(c) : ""}</td>`).join("")}</tr>`
+      : `<td class="${c.num ? "num" : ""}">${c.pct ? gpTotal(rows) : c.num ? sumCol(c) : ""}</td>`).join("")}</tr>`
     : "";
 }
 
@@ -1717,11 +1748,9 @@ const ROLE_NAMES = ["Viewer", "Strategy", "Internal Audit", "Admin"];   // Strat
 
 // "admin" shows the Admin Panel; "data" goes back to the company tab that is selected.
 // "status" is the monthly audit checklist of the selected company; "usage" shows sign-in counts per user;
-// "tickets" lists the tickets raised from the account menu; "teams" and the Job Profitability pages gpLow /
-// gpHigh (GP% rules still to come) are still to be built (coming-soon note).
-const SYS_PAGES = { status: "Audit Checklist — Monthly", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets",
-                    gpLow: "Job Profitability — GP% < 3%", gpHigh: "Job Profitability — GP% > 20%" };
-const SOON_PAGES = ["teams", "gpLow", "gpHigh"];
+// "tickets" lists the tickets raised from the account menu; "teams" is still to be built (coming-soon note).
+const SYS_PAGES = { status: "Audit Checklist — Monthly", usage: "Usage Analytics", teams: "Teams", tickets: "Tickets" };
+const SOON_PAGES = ["teams"];
 let currentView = "data";
 function showView(view) {
   currentView = view;
