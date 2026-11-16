@@ -48,7 +48,8 @@
 //   import jobs that don't carry it, the revenue + WIP of its th_ops_wip lines. Total Expense likewise: the job's
 //   own total or its lines' cost + accrual, sent as a positive amount (stored negative; income − expense = profit).
 //   Sent as gpIncome / gpExpense / gpProfit.
-// Job Profitability (SAR USA, usa_ops_jobs; SAR Canada, ca_ops_* — same fields without the letter): financial lock done → income = Billed Revenue (C), expense = Posted
+// Job Profitability (SAR USA, usa_ops_jobs; STSPL air / ocean, the same fields in their job collections; SAR Canada,
+//   ca_ops_* — same fields without the letter): financial lock done → income = Billed Revenue (C), expense = Posted
 //   Cost (G); not done → income = max(Provisional Revenue A, Unbilled Revenue D), expense = max(Provisional Cost E,
 //   Unposted Cost H). Profit = income − expense; gpBasis says which one was used.
 // Financial Lock Pending: Indonesia / Thailand = job status is not CLS; the others = no financial lock date.
@@ -183,8 +184,8 @@ async function canadaData(db) {
 // maps the charge lines' LOB to SEA|AIR|ROAD EXPORT|IMPORT; cur: the suffix of the charge lines' amount fields.
 const US_LIKE = {
   usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd", gp: true },
-  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr" },
-  stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "",
+  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr", gp: true },
+  stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "", gp: true,
               jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob", openByDay: true,
               lobOf: { "FFWD SEA EXP": "SEA EXPORT", "FFWD SEA IMP": "SEA IMPORT" } },
 };

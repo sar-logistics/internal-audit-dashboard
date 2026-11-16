@@ -986,7 +986,7 @@ $("caRefresh").onclick = () => loadCompany(true);
 //   Cost Not Posted:    estimatedvsactual jobs whose summed unposted cost is > 0
 //   Finance Pendency:   jobs with no Financial Lock Date (finPending from api/mongo-batch.js)
 //   GP% < 3% / > 20%:   Job Profitability. GP% = Job Profit ÷ Total Income (gpProfit / gpIncome from
-//                       api/mongo-batch.js), so far for Indonesia, Thailand, SAR USA and SAR Canada; jobs with no income are left out
+//                       api/mongo-batch.js), for every company; jobs with no income are left out
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MON_IDX = Object.fromEntries(MONTHS.map((m, i) => [m.toLowerCase(), i]));
 const AV_COLORS = ["#3F6E1E", "#1F3A6E", "#0891B2", "#7C3AED", "#B45309", "#BE185D", "#047857", "#4338CA"];
@@ -1275,7 +1275,7 @@ function renderBranchTable() {
 
   const inRange = inFilters(rep.pool);
   const flagged = inRange.filter(rep.flag);
-  // GP% is worked out only where its rule is set (Indonesia, Thailand, SAR USA, SAR Canada so far)
+  // GP% is worked out only where its rule is set (every company now; kept for any added later)
   if (rep.gp && !bt.jobs.some((r) => typeof r.gpIncome === "number")) {
     $("btCount").textContent = "";
     $("btHead").innerHTML = `<tr><th>Branch / Job Owner</th><th class="gt">Grand Total</th></tr>`;
@@ -1519,6 +1519,8 @@ const CA_COLS_GP = gpCols(["provisionalRevenue", "billedRevenue", "unbilledReven
   "unpostedCost", "provisionalProfit", "actualProfit"], COLS_TOTAL_JOBS);
 DRILLS_BY_DATASET.usa.gpLow = DRILLS_BY_DATASET.usa.gpHigh = { kind: "jobs", cols: US_COLS_GP, gp: true };
 DRILLS_BY_DATASET.canada.gpLow = DRILLS_BY_DATASET.canada.gpHigh = { kind: "jobs", cols: CA_COLS_GP, gp: true };
+// STSPL air / ocean: the SAR USA GP% columns (same job fields)
+["stspl", "stsplsea"].forEach((ds) => { DRILLS_BY_DATASET[ds].gpLow = DRILLS_BY_DATASET[ds].gpHigh = DRILLS_BY_DATASET.usa.gpLow; });
 DRILLS_BY_DATASET.thailand = DRILLS_BY_DATASET.indonesia;   // same columns in the Thailand ops dashboard
 Object.values(DRILLS_BY_DATASET).forEach((d) => { d.fin = d.open; });   // Finance Pendency pop-ups: the Open Jobs columns
 const drills = () => DRILLS_BY_DATASET[ent().dataset];
