@@ -583,6 +583,35 @@
   .im-tag { font-size: 11px; font-weight: 600; border-radius: 5px; padding: 2px 8px; white-space: nowrap; }
   .im-tag.new { background: #ecfdf5; color: #047857; } .im-tag.upd { background: #eff6ff; color: #1d4ed8; } .im-tag.err { background: #fef2f2; color: #B91C1C; }
   #imMsg { margin-right: auto; font-size: 12.5px; color: #B91C1C; }
+
+  /* Sidebar animation (in place of the greeting): 7s loop */
+  .greeting.ga { padding: 2px 16px 10px; text-transform: none; letter-spacing: 0; }
+  .greeting.ga svg { display: block; overflow: visible; }
+  .ga-t { stroke-dasharray: 12; stroke-dashoffset: 12; }
+  .ga-t1 { animation: ga-t1 7s infinite; } .ga-t2 { animation: ga-t2 7s infinite; } .ga-t3 { animation: ga-t3 7s infinite; }
+  @keyframes ga-t1 { 0%, 9% { stroke-dashoffset: 12; } 14%, 88% { stroke-dashoffset: 0; } 95%, 100% { stroke-dashoffset: 12; } }
+  @keyframes ga-t2 { 0%, 21% { stroke-dashoffset: 12; } 26%, 88% { stroke-dashoffset: 0; } 95%, 100% { stroke-dashoffset: 12; } }
+  @keyframes ga-t3 { 0%, 33% { stroke-dashoffset: 12; } 38%, 88% { stroke-dashoffset: 0; } 95%, 100% { stroke-dashoffset: 12; } }
+  .ga-b { transform-box: fill-box; transform-origin: bottom; transform: scaleY(.12); animation: ga-bar 7s infinite; opacity: .9; }
+  .ga-b2 { animation-delay: .12s; } .ga-b3 { animation-delay: .24s; } .ga-b4 { animation-delay: .36s; } .ga-b5 { animation-delay: .48s; }
+  @keyframes ga-bar { 0%, 42% { transform: scaleY(.12); } 54%, 88% { transform: scaleY(1); } 96%, 100% { transform: scaleY(.12); } }
+  .ga-line { stroke-dasharray: 130; stroke-dashoffset: 130; animation: ga-line 7s infinite; }
+  @keyframes ga-line { 0%, 56% { stroke-dashoffset: 130; } 70%, 88% { stroke-dashoffset: 0; } 95%, 100% { stroke-dashoffset: 130; } }
+  .ga-mag { animation: ga-mag 7s ease-in-out infinite; }
+  @keyframes ga-mag {
+    0%, 4%   { transform: translate(-14px, 1px); }
+    11%      { transform: translate(-14px, 1px); }   /* line 1 */
+    23%      { transform: translate(-14px, 12px); }  /* line 2 */
+    35%, 40% { transform: translate(-14px, 23px); }  /* line 3 */
+    60%      { transform: translate(64px, 4px); }    /* over the figures */
+    76%, 84% { transform: translate(128px, -2px); }
+    100%     { transform: translate(-14px, 1px); }
+  }
+  @media (prefers-reduced-motion: reduce) {   /* the finished picture, still */
+    .ga-t, .ga-line { animation: none; stroke-dashoffset: 0; }
+    .ga-b { animation: none; transform: none; }
+    .ga-mag { animation: none; transform: translate(-14px, 23px); }
+  }
 </style>
 </head>
 <body>
@@ -612,7 +641,29 @@
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>
       </button>
     </div>
-    <div class="greeting" id="greeting"></div>
+    <div class="greeting ga" id="greeting" aria-hidden="true">
+      <!-- An audit at work, looping: the magnifier checks each line of the clipboard (ticks draw in), then the
+           figures (bars grow), then everything resets -->
+      <svg viewBox="0 0 200 58" width="100%" height="58">
+        <rect x="8" y="9" width="44" height="46" rx="6" fill="rgba(255,255,255,0.06)" stroke="#93C5FD" stroke-width="1.6"/>
+        <rect x="21" y="5" width="18" height="8" rx="2.5" fill="#3B82F6"/>
+        <g stroke="#93C5FD" stroke-width="1.4" fill="none" opacity=".9">
+          <rect x="14" y="20" width="7" height="7" rx="1.5"/><rect x="14" y="31" width="7" height="7" rx="1.5"/><rect x="14" y="42" width="7" height="7" rx="1.5"/>
+        </g>
+        <g stroke="rgba(181,212,244,0.55)" stroke-width="2.2" stroke-linecap="round">
+          <path d="M26 23.5h19"/><path d="M26 34.5h15"/><path d="M26 45.5h17"/>
+        </g>
+        <g stroke="#4ADE80" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path class="ga-t ga-t1" d="M15.5 23.5l2 2 4-4.8"/><path class="ga-t ga-t2" d="M15.5 34.5l2 2 4-4.8"/><path class="ga-t ga-t3" d="M15.5 45.5l2 2 4-4.8"/>
+        </g>
+        <path d="M66 52h120" stroke="rgba(181,212,244,0.35)" stroke-width="1.2"/>
+        <g fill="#3B82F6"><rect class="ga-b ga-b1" x="72" y="30" width="12" height="22" rx="2"/><rect class="ga-b ga-b2" x="92" y="20" width="12" height="32" rx="2" fill="#60A5FA"/>
+          <rect class="ga-b ga-b3" x="112" y="36" width="12" height="16" rx="2"/><rect class="ga-b ga-b4" x="132" y="14" width="12" height="38" rx="2" fill="#93C5FD"/>
+          <rect class="ga-b ga-b5" x="152" y="26" width="12" height="26" rx="2" fill="#60A5FA"/></g>
+        <path class="ga-line" d="M78 28 98 18 118 33 138 11 158 23 178 9" fill="none" stroke="#4ADE80" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <g class="ga-mag"><circle cx="34" cy="22" r="8" fill="rgba(147,197,253,0.18)" stroke="#fff" stroke-width="2"/><path d="m40 28 6 6" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></g>
+      </svg>
+    </div>
     <nav class="nav" id="btReports">
       <div class="nav-sec">
       <button type="button" class="nav-label nav-toggle" aria-expanded="true">Operations
@@ -1014,7 +1065,6 @@ async function start() {
   finally { $("loginBusy").classList.add("hidden"); }
   $("meName").textContent = me.name;
   $("meRole").textContent = ROLE_NAMES.find((r) => r.toLowerCase() === me.role) || "Viewer";
-  $("greeting").textContent = `Hello ${String(me.name).split(" ")[0]} - ${ROLE_NAMES.find((r) => r.toLowerCase() === me.role) || "Viewer"}`;
   $("meAvatar").src = me.picture || "";
   $("meAvatar").classList.toggle("hidden", !me.picture);
   $("meInitial").textContent = String(me.name || "?").trim().charAt(0).toUpperCase();
