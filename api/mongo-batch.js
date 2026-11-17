@@ -444,6 +444,49 @@ async function chargeLines(db, entity, body) {
   return { rows };
 }
 
+// ---------------------------------------------------------------- last refreshed (api/last-updated.js)
+
+// When fresh data last arrived, from the same sources as each company's "Refreshed at": Canada = the newest
+// syncedAt; SAR USA / STSPL = the _meta push stamps, else the newest record; Indonesia / Thailand = the newest
+// record (its _id time). Only the newest document of each collection is read.
+async function entityRefreshedAt(entity) {
+  const db = await getDb(entity);
+  const idTime = async (name) => {
+    const d = await db.collection(name).find({}, { projection: { _id: 1 } }).sort({ _id: -1 }).limit(1).next();
+    return d && d._id && typeof d._id.getTimestamp === "function" ? d._id.getTimestamp().getTime() : null;
+  };
+  const timeOf = (v) => { const t = new Date(v).getTime(); return isNaN(t) ? null : t; };
+  let times;
+  if (entity === "canada") {
+    times = await Promise.all([...CA_JOB_COLLECTIONS, CA_EVA].map(async (name) => {
+      const d = await db.collection(name).find({ syncedAt: { $exists: true } }, { projection: { _id: 0, syncedAt: 1 } })
+        .sort({ syncedAt: -1 }).limit(1).next();
+      return d ? timeOf(String(d.syncedAt)) : null;
+    }));
+  } else if (US_LIKE[entity]) {
+    const cfg = US_LIKE[entity], names = [...cfg.jobs, cfg.etdeta];
+    const stamps = await db.collection("_meta").find({ _id: { $in: names.map((n) => "lastPush_" + n) } }).toArray();
+    times = await Promise.all(names.map((name) => {
+      const st = stamps.find((d) => d._id === "lastPush_" + name);
+      const t = st ? timeOf(st.updatedAt) : null;
+      return t !== null ? t : idTime(name);
+    }));
+  } else {
+    times = await Promise.all([...SEA_JOB_COLLECTIONS[entity], ID_WIP].map(idTime));
+  }
+  const ok = times.filter((t) => t !== null);
+  return ok.length ? Math.max(...ok) : null;
+}
+
+/** ISO time of the newest data across every company whose database is set up, or null. */
+export async function lastRefreshedAt() {
+  const names = Object.keys(ENTITIES).filter((n) => ENTITIES[n].envs.some((v) => process.env[v]));
+  const results = await Promise.allSettled(names.map(entityRefreshedAt));
+  const times = results.filter((r) => r.status === "fulfilled" && r.value !== null).map((r) => r.value);
+  results.forEach((r, i) => { if (r.status === "rejected") console.error("last-updated " + names[i] + ":", r.reason && r.reason.message); });
+  return times.length ? new Date(Math.max(...times)).toISOString() : null;
+}
+
 // ---------------------------------------------------------------- handler
 
 const cache = new Map();   // entity -> { payload, at }
