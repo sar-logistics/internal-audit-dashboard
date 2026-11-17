@@ -478,13 +478,28 @@ async function entityRefreshedAt(entity) {
   return ok.length ? Math.max(...ok) : null;
 }
 
-/** ISO time of the newest data across every company whose database is set up, or null. */
-export async function lastRefreshedAt() {
+/**
+ * ISO time of the newest data across every company whose database is set up, or null, and whether every
+ * company answered. The Hub waits 5 seconds at most, and a cold start has to open every connection first, so
+ * after waitMs this answers with the companies that have replied (complete: false) instead of waiting for all.
+ */
+export async function lastRefreshedAt(waitMs = Infinity) {
   const names = Object.keys(ENTITIES).filter((n) => ENTITIES[n].envs.some((v) => process.env[v]));
-  const results = await Promise.allSettled(names.map(entityRefreshedAt));
-  const times = results.filter((r) => r.status === "fulfilled" && r.value !== null).map((r) => r.value);
-  results.forEach((r, i) => { if (r.status === "rejected") console.error("last-updated " + names[i] + ":", r.reason && r.reason.message); });
-  return times.length ? new Date(Math.max(...times)).toISOString() : null;
+  const times = [];
+  let settled = 0;
+  const all = Promise.all(names.map((n) => entityRefreshedAt(n)
+    .then((t) => { if (t !== null) times.push(t); })
+    .catch((err) => console.error("last-updated " + n + ":", err && err.message))
+    .finally(() => { settled++; })));
+  let timer;
+  const deadline = new Promise((resolve) => { timer = setTimeout(resolve, waitMs); });
+  await Promise.race([all, deadline]);
+  clearTimeout(timer);
+  // Nothing in yet at the deadline: wait for the first answer rather than report nothing
+  if (!times.length && settled < names.length) {
+    await Promise.race([all, new Promise((resolve) => { const i = setInterval(() => { if (times.length) { clearInterval(i); resolve(); } }, 50); all.finally(() => clearInterval(i)); })]);
+  }
+  return { value: times.length ? new Date(Math.max(...times)).toISOString() : null, complete: settled === names.length };
 }
 
 // ---------------------------------------------------------------- handler
