@@ -186,7 +186,7 @@ async function canadaData(db) {
 const US_LIKE = {
   usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd", gp: true },
   stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr", gp: true, revDays: 0 },
-  stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "", gp: true,
+  stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "", gp: true, revDays: 0,
               jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob", openByDay: true,
               lobOf: { "FFWD SEA EXP": "SEA EXPORT", "FFWD SEA IMP": "SEA IMPORT" } },
 };
@@ -267,8 +267,8 @@ async function usaEvaJobs(db, cfg) {
     t.cost += toNum(e.unpostedCost);
   }
   // Air (groupEtdEtaByShipment + _renderEtdEtaFlagged in the India Air dashboard): Billing Pendency =
-  // unbilled ≥ 1 and ETD/ETA New before today − revDays (STSPL air: 0 since 18 Nov 2026, so yesterday's jobs
-  // count; STSPL ocean: 3); Pending Cost = unposted ≥ 1, and the first line ops-locked only while the page's
+  // unbilled ≥ 1 and ETD/ETA New before today − revDays (STSPL air and ocean: 0 since 18 Nov 2026, so yesterday's
+  // jobs count); Pending Cost = unposted ≥ 1, and the first line ops-locked only while the page's
   // Require Ops Lock switch is on (opsLocked; on by default for STSPL)
   const cutRev = istToday() - (cfg.revDays ?? 3) * 864e5;
   return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => {
