@@ -1073,8 +1073,8 @@ async function start() {
 const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
-  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago" },   // air only for now, as the India Air Operations dashboard; INR only
-  "STSPL - Ocean": { dataset: "stsplsea",  source: "INR", localOnly: true, since: [2026, 3], openNote: "ETD/ETA on or before today − 7, Ops Lock not done", revNote: "Unbilled ≥ 1, ETD/ETA over 3 days ago" },   // sea, same rules as STSPL air; INR only
+  "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA yesterday or earlier", costLock: true },   // air only for now, as the India Air Operations dashboard; INR only
+  "STSPL - Ocean": { dataset: "stsplsea",  source: "INR", localOnly: true, since: [2026, 3], openNote: "ETD/ETA on or before today − 7, Ops Lock not done", revNote: "Unbilled > 0, ETD/ETA on or before today − 3", costNote: "Unposted > 0, ETD/ETA on or before today − 7", costLock: true },   // sea, same rules as STSPL air; INR only
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
   "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
@@ -1196,7 +1196,7 @@ const REPORTS = {
 // GP% per job (null when the company has no GP data yet or the job has no income)
 const gpPctOf = (r) => typeof r.gpIncome === "number" && r.gpIncome > 0 ? r.gpProfit / r.gpIncome * 100 : null;
 let lobPick = "";   // the LOB picked on any report or on Status; every page uses it when that company has the LOB
-const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, reqLock: false, open: new Set(), shown: [], allOpen: false };
+const bt = { jobs: [], eva: [], flagged: [], report: "total", byAmount: false, reqLock: false, costReqLock: true, open: new Set(), shown: [], allOpen: false };
 
 function parseDay(v) {
   if (!v) return null;
@@ -1386,10 +1386,17 @@ function filterState() {
 }
 // Require Ops Lock (the CA ops dashboard's switch): on the Operations and Finance reports that have it (lock),
 // only jobs whose Operation Lock is done count — on the job lists no opsPending, on the charge-line jobs opsLocked
-const lockOn = () => bt.reqLock && !!REPORTS[bt.report].lock;
-function inFilters(pool) {
+// costLock companies (STSPL, as the India Air dashboard's Pending Cost page): Cost Not Posted has its own switch,
+// on by default, which the Unposted Cost card follows too
+const ownCostLock = (report) => report === "cost" && !!ent().costLock;
+const reqLockOf = (report = bt.report) => ownCostLock(report) ? bt.costReqLock : bt.reqLock;
+const lockOn = (report = bt.report) => reqLockOf(report) && !!REPORTS[report].lock;
+const kpiReport = (key) => key === "uc" && ent().costLock ? "cost" : bt.report;
+function inFilters(pool, report = bt.report) {
   const { prop, lo, hi, lob } = filterState();
-  const locked = lockOn() ? (pool === "jobs" ? (r) => !r.opsPending : (r) => !!r.opsLocked) : () => true;
+  // (STSPL ocean sends a separate costLocked for Cost Not Posted)
+  const locked = lockOn(report) ? (pool === "jobs" ? (r) => !r.opsPending
+                                   : report === "cost" ? (r) => !!(r.costLocked ?? r.opsLocked) : (r) => !!r.opsLocked) : () => true;
   return bt[pool].filter((r) => r[prop] !== null && r[prop] >= lo && r[prop] <= hi && (!lob || r.lobLabel === lob) && locked(r));
 }
 function filterLabel() {
@@ -1425,7 +1432,7 @@ function countTo(el, value, fmt) {
 function renderKpis() {
   const eva = inFilters("eva"), jobs = inFilters("jobs");
   const sum = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
-  const ur = eva.filter(KPI_VIEWS.ur.flag), uc = eva.filter(KPI_VIEWS.uc.flag);
+  const ur = eva.filter(KPI_VIEWS.ur.flag), uc = inFilters("eva", kpiReport("uc")).filter(KPI_VIEWS.uc.flag);
   const open = jobs.filter(KPI_VIEWS.oj.flag).length;
   const period = filterState().range;
   document.querySelectorAll(".kpi-row.rep").forEach((row) => row.classList.toggle("hidden", row.dataset.for !== bt.report));
@@ -1460,8 +1467,8 @@ function renderBranchTable() {
   $("btTitle").textContent = `Branch › Job Owner — ${rep.title}`;
   $("btAmountSwitch").classList.toggle("hidden", !rep.amtKey);
   $("btLockSwitch").classList.toggle("hidden", !rep.lock);   // Open Jobs are by definition not ops-locked
-  $("btReqLock").checked = bt.reqLock;
-  $("btReqLockLbl").textContent = bt.reqLock ? "Yes" : "No";
+  $("btReqLock").checked = reqLockOf();
+  $("btReqLockLbl").textContent = reqLockOf() ? "Yes" : "No";
   $("btByLbl").textContent = byAmount ? "Amount" : "Count";
   document.querySelectorAll("#btReports [data-report]").forEach((b) => b.classList.toggle("active", b.dataset.report === bt.report));
 
@@ -1544,7 +1551,7 @@ $("btReports").onclick = (e) => {
   else if (e.target.closest("[data-sys=status]")) openChecklist();
 };
 $("btByAmount").onchange = (e) => { bt.byAmount = e.target.checked; renderBranchTable(); };
-$("btReqLock").onchange = (e) => { bt.reqLock = e.target.checked; renderBranchTable(); };
+$("btReqLock").onchange = (e) => { bt[ownCostLock(bt.report) ? "costReqLock" : "reqLock"] = e.target.checked; renderBranchTable(); };
 ["btMonth", "btFrom", "btTo", "btFromDay", "btToDay"].forEach((id) => { $(id).onchange = renderBranchTable; });
 $("btLob").onchange = () => { lobPick = $("btLob").value; renderBranchTable(); };
 $("btView").onchange = () => { fillPeriodPickers(false); renderBranchTable(); };
@@ -1734,7 +1741,7 @@ const km = { rows: [], drill: null, req: 0, filters: {}, sort: null };   // sort
 
 function openKpi(key) {
   const v = KPI_VIEWS[key];
-  openDrill(v.title, drills()[v.drill], inFilters(v.pool).filter(v.flag), filterLabel());
+  openDrill(v.title, drills()[v.drill], inFilters(v.pool, kpiReport(key)).filter(v.flag), filterLabel());
 }
 
 // A number in the Branch › Job Owner table: the jobs counted in that cell
