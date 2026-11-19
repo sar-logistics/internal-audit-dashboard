@@ -487,9 +487,11 @@ const ID_WIP_FIELDS = ["shipmentId", "chargeCode", "wip", "revenue", "accrual", 
 const MAX_DETAIL_JOBS = 5000;
 
 function jobIds(body) {
-  const ids = [...new Set((Array.isArray(body.jobNos) ? body.jobNos : []).map((j) => String(j ?? "").trim()).filter(Boolean))];
+  const raw = (Array.isArray(body.jobNos) ? body.jobNos : []).map((j) => String(j ?? ""));
+  const ids = [...new Set(raw.map((j) => j.trim()).filter(Boolean))];
   if (ids.length > MAX_DETAIL_JOBS) throw new HttpError(400, `Too many jobs (${ids.length}); narrow the months or LOB.`);
-  return ids;
+  // a job number stored with spaces around it is matched as it is stored too
+  return [...new Set([...ids, ...raw.filter((j) => j.trim() && j !== j.trim())])];
 }
 // Job numbers may be stored as text or as numbers: match both
 const anyOf = (ids) => ({ $in: [...ids, ...ids.filter((j) => /^\d+$/.test(j)).map(Number)] });
