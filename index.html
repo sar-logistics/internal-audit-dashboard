@@ -1074,7 +1074,7 @@ const ENTITIES = {
   "SAR Canada":    { dataset: "canada",    source: "CAD", defaultRate: 1.4 },
   "SAR USA":       { dataset: "usa",       source: "USD" },
   "STSPL":         { dataset: "stspl",     source: "INR", localOnly: true, since: [2026, 3], openNote: "Not ops-locked, ETD/ETA + 7 days passed", revNote: "Unbilled ≥ 1, ETD/ETA yesterday or earlier", costLock: true },   // air only for now, as the India Air Operations dashboard; INR only
-  "STSPL - Ocean": { dataset: "stsplsea",  source: "INR", localOnly: true, since: [2026, 3], openNote: "ETD/ETA on or before today − 7, Ops Lock not done", revNote: "Unbilled ≥ 1, ETD/ETA yesterday or earlier", costLock: true },   // sea, same rules as STSPL air; INR only
+  "STSPL - Ocean": { dataset: "stsplsea",  source: "INR", localOnly: true, since: [2026, 3], openNote: "ETD/ETA on or before today − 7, Ops Lock not done", revNote: "Unbilled > 0, ETD/ETA on or before today − 3", costNote: "Unposted > 0, ETD/ETA on or before today − 7", costLock: true },   // sea, same rules as STSPL air; INR only
   "SAR Indonesia": { dataset: "indonesia", source: "IDR", defaultRate: 17500, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },   // as the Indonesia ops dashboard
   "SAR Thailand":  { dataset: "thailand",  source: "THB", defaultRate: 32.5, openNote: "Status not CMP / CLS", finNote: "Job status not CLS", revNote: "WIP > 0, ETD/ETA over 3 days ago", costNote: "Accrual ≠ 0, ETD/ETA over 7 days ago" },    // as the Thailand ops dashboard
 };
@@ -1394,7 +1394,9 @@ const lockOn = (report = bt.report) => reqLockOf(report) && !!REPORTS[report].lo
 const kpiReport = (key) => key === "uc" && ent().costLock ? "cost" : bt.report;
 function inFilters(pool, report = bt.report) {
   const { prop, lo, hi, lob } = filterState();
-  const locked = lockOn(report) ? (pool === "jobs" ? (r) => !r.opsPending : (r) => !!r.opsLocked) : () => true;
+  // (STSPL ocean sends a separate costLocked for Cost Not Posted)
+  const locked = lockOn(report) ? (pool === "jobs" ? (r) => !r.opsPending
+                                   : report === "cost" ? (r) => !!(r.costLocked ?? r.opsLocked) : (r) => !!r.opsLocked) : () => true;
   return bt[pool].filter((r) => r[prop] !== null && r[prop] >= lo && r[prop] <= hi && (!lob || r.lobLabel === lob) && locked(r));
 }
 function filterLabel() {

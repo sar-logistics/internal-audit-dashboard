@@ -186,7 +186,7 @@ async function canadaData(db) {
 const US_LIKE = {
   usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd", gp: true },
   stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr", gp: true, revDays: 0 },
-  stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "", gp: true, revDays: 0,
+  stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "", gp: true, seaOps: true,
               jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob", openByDay: true,
               lobOf: { "FFWD SEA EXP": "SEA EXPORT", "FFWD SEA IMP": "SEA IMPORT" } },
 };
@@ -216,12 +216,16 @@ async function usaJobs(db, cfg) {
     .find({}, { projection: { _id: 0, [jobKeyOf(cfg)]: 1, direction: 1, lob: 1, jobBranch: 1, branch: 1, location: 1, operator: 1,
                               jobOwner: 1, etdEtaNew: 1, jobDate: 1, operationLockDate: 1, operationLock: 1,
                               financialLockDate: 1, financialLock: 1, ...(cfg.gp ? USA_GP_PROJECTION : {}) } }).toArray()))).flat();
-  return { fields: cfg.gp ? [...JOB_FIELDS, "gpIncome", "gpProfit", "gpExpense", "gpBasis"] : JOB_FIELDS, rows: docs.map((d) => {
+  // (STSPL ocean leaves out records with no Shipment No, as the Sea Export Ops dashboard)
+  return { fields: cfg.gp ? [...JOB_FIELDS, "gpIncome", "gpProfit", "gpExpense", "gpBasis"] : JOB_FIELDS,
+           rows: docs.filter((d) => !cfg.seaOps || filled(d[jobKeyOf(cfg)])).map((d) => {
     const lob = String(d.lob || "").trim().toUpperCase();
     const direction = d.direction || (/EXPORT/.test(lob) ? "Export" : /IMPORT/.test(lob) ? "Import" : titleCase(lob.split(" ").pop() || ""));
     return [
       String(d[jobKeyOf(cfg)] ?? ""), direction, lob,
-      d.jobBranch || d.branch || d.location || "(No Branch)", d.operator || d.jobOwner || "(Unknown)",
+      // STSPL ocean: branch = Location, owner = Job Owner, as the Sea Export Ops dashboard
+      (cfg.seaOps ? d.location : d.jobBranch || d.branch || d.location) || "(No Branch)",
+      (cfg.seaOps ? d.jobOwner : d.operator || d.jobOwner) || "(Unknown)",
       d.etdEtaNew || d.jobDate || "",
       cfg.openByDay ? isSeaOpen(d, today) : cfg.air ? isAirOpen(d, today) : !filled(d.operationLockDate), finPendingOf(d), opsPendingOf(d),
       ...(cfg.gp ? usaGp(d) : []),
@@ -267,8 +271,8 @@ async function usaEvaJobs(db, cfg) {
     t.cost += toNum(e.unpostedCost);
   }
   // Air (groupEtdEtaByShipment + _renderEtdEtaFlagged in the India Air dashboard): Billing Pendency =
-  // unbilled ≥ 1 and ETD/ETA New before today − revDays (STSPL air and ocean: 0 since 18 Nov 2026, so yesterday's
-  // jobs count); Pending Cost = unposted ≥ 1, and the first line ops-locked only while the page's
+  // unbilled ≥ 1 and ETD/ETA New before today − revDays (STSPL air: 0 since 18 Nov 2026, so yesterday's jobs
+  // count); Pending Cost = unposted ≥ 1, and the first line ops-locked only while the page's
   // Require Ops Lock switch is on (opsLocked; on by default for STSPL)
   const cutRev = istToday() - (cfg.revDays ?? 3) * 864e5;
   return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => {
@@ -280,11 +284,49 @@ async function usaEvaJobs(db, cfg) {
 }
 
 // Last refreshed: the _meta push stamps when there are any (SAR USA), else the newest record's _id time.
+// STSPL ocean (Billing Pendency / Pending Cost of the Sea Export Ops dashboard, _renderEtdFlagged there): one row
+// per job of the job tabs (direction and LOB as the job lists; branch = Location, owner = Job Owner, date = ETD/ETA
+// New › Job Date). A job's pending lines are its sea_export_etdeta lines (by Job No.) with unbilled revenue /
+// unposted cost > 0; amount = their sum. Revenue is flagged when it has such lines and the IST day of its date is
+// on or before today − 3, cost on or before today − 7. Require Ops Lock: one of those lines has an Operation Lock
+// Date (opsLocked for revenue, costLocked for cost).
+const SEA_EVA_FIELDS = [...EVA_JOB_FIELDS, "costLocked"];
+async function seaEvaJobs(db, cfg) {
+  const [docs, lines] = await Promise.all([
+    Promise.all(cfg.jobs.map((name) => db.collection(name)
+      .find({}, { projection: { _id: 0, [cfg.jobKey]: 1, direction: 1, lob: 1, location: 1, jobOwner: 1, etdEtaNew: 1, jobDate: 1 } })
+      .toArray())).then((a) => a.flat()),
+    db.collection(cfg.etdeta).find({}, { projection: { _id: 0, [cfg.lineKey]: 1, unbilledRevenue: 1, unpostedCost: 1, operationLockDate: 1 } })
+      .toArray(),
+  ]);
+  const byJob = new Map();
+  for (const l of lines) {
+    const job = String(l[cfg.lineKey] ?? "").trim();
+    if (!job) continue;
+    let t = byJob.get(job);
+    if (!t) byJob.set(job, t = { rev: 0, cost: 0, revLines: 0, costLines: 0, revLocked: false, costLocked: false });
+    const rev = toNum(l.unbilledRevenue), cost = toNum(l.unpostedCost), locked = filled(l.operationLockDate);
+    if (rev > 0) { t.rev += rev; t.revLines++; t.revLocked = t.revLocked || locked; }
+    if (cost > 0) { t.cost += cost; t.costLines++; t.costLocked = t.costLocked || locked; }
+  }
+  const today = istToday();
+  return { fields: SEA_EVA_FIELDS, rows: docs.filter((d) => filled(d[cfg.jobKey])).map((d) => {
+    const job = String(d[cfg.jobKey]).trim();
+    const lob = String(d.lob || "").trim().toUpperCase();
+    const direction = d.direction || (/EXPORT/.test(lob) ? "Export" : /IMPORT/.test(lob) ? "Import" : titleCase(lob.split(" ").pop() || ""));
+    const date = d.etdEtaNew || d.jobDate || "", at = timeOf(date);
+    const due = (days) => at !== null && istDay(at) <= today - days * 864e5;
+    const t = byJob.get(job) || { rev: 0, cost: 0, revLines: 0, costLines: 0, revLocked: false, costLocked: false };
+    return [job, direction, lob, d.location || "(No Branch)", d.jobOwner || "(Unknown)", date, round2(t.rev), round2(t.cost),
+            t.revLines > 0 && due(3), t.costLines > 0 && due(7), t.revLocked, t.costLocked];
+  }) };
+}
+
 async function usaData(db, entity) {
   const cfg = US_LIKE[entity];
   const newest = (name) => db.collection(name).find({}, { projection: { _id: 1 } }).sort({ _id: -1 }).limit(1).toArray();
   const [jobs, evaJobs, stamps, ...latest] = await Promise.all([
-    usaJobs(db, cfg), usaEvaJobs(db, cfg),
+    usaJobs(db, cfg), cfg.seaOps ? seaEvaJobs(db, cfg) : usaEvaJobs(db, cfg),
     db.collection("_meta").find({ _id: { $in: [...cfg.jobs, cfg.etdeta].map((n) => "lastPush_" + n) } }).toArray(),
     ...[cfg.jobs[0], cfg.etdeta].map(newest),
   ]);
@@ -480,7 +522,8 @@ async function chargeLines(db, entity, body) {
   }
   if (US_LIKE[entity]) {
     const cfg = US_LIKE[entity];
-    const filter = { [lineKeyOf(cfg)]: anyOf(ids),
+    // STSPL ocean: the job's lines with an amount > 0, whatever their LOB (Sea Export Ops dashboard)
+    const filter = cfg.seaOps ? { [lineKeyOf(cfg)]: anyOf(ids), [cost ? "unpostedCost" : "unbilledRevenue"]: { $gt: 0 } } : { [lineKeyOf(cfg)]: anyOf(ids),
                      ...(cfg.lobOf ? { [cfg.lineLob]: { $in: Object.keys(cfg.lobOf) } }
                                    : { lobExportImport: { $regex: US_LOB_RE.source, $options: "i" } }),
                      [cost ? "unpostedCost" : "unbilledRevenue"]: cfg.air ? { $gte: AIR_MIN } : { $gt: 0 } };
