@@ -277,7 +277,13 @@ async function usaEvaJobs(db, cfg) {
   const cutRev = istToday() - (cfg.revDays ?? 3) * 864e5;
   return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => {
     const base = [t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew];
-    if (!cfg.air) return evaRow(base, t.rev, t.cost, t.locked);
+    // SAR USA (_renderEtdEtaFlagged there, since 16 Nov 2026): Revenue Not Billed = unbilled > 0 and the IST day of
+    // ETD/ETA New on or before today − 3; Cost Not Posted = unposted > 0 and on or before today − 7
+    if (!cfg.air) {
+      const at = timeOf(t.etdEtaNew), due = (days) => at !== null && istDay(at) <= istToday() - days * 864e5;
+      const [rev, cost] = [round2(t.rev), round2(t.cost)];
+      return [...base, rev, cost, rev > 0 && due(3), cost > 0 && due(7), !!t.locked];
+    }
     const etd = timeOf(t.etdEtaNew);
     return [...base, round2(t.rev), round2(t.cost), t.rev >= AIR_MIN && etd !== null && etd < cutRev, t.cost >= AIR_MIN, t.locked];
   }) };
