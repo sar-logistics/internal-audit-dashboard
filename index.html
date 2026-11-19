@@ -1794,6 +1794,19 @@ async function openDrill(title, drill, summaryRows, subtitle) {
           location: c.location || c.jobBranch || c.branch || "", jobOwner: c.jobOwner || c.operator || "" }
       : { ...c, shipmentId: String(c.jobNo ?? c.shipmentId ?? ""), etdEtaNew: c.etdEtaNew || c.etdEta || c.jobDate || "",
           lob: c.lob || c.lobExportImport || c.lob2 || "" });
+    // A counted job whose record didn't come back (blank or unmatched job number) is still listed, from the
+    // table's own row
+    if (drill.kind === "jobs") {
+      const found = new Set(km.rows.map((c) => c.shipmentId.trim()));
+      summaryRows.forEach((r) => {
+        const no = String(r.jobNo ?? "").trim();
+        if (found.has(no) && no) return;
+        if (no) found.add(no);
+        km.rows.push({ shipmentId: no || "(no job number)", etdEtaNew: r.periodDate || "", location: r.branch || "", jobOwner: r.jobOwner || "",
+                       lob: r.lob || "", direction: r.direction || "", gpIncome: r.gpIncome, gpExpense: r.gpExpense, gpProfit: r.gpProfit,
+                       gpPct: r.gpPct, gpBasis: r.gpBasis });
+      });
+    }
     km.rows.sort(drill.amtKey
       ? (a, b) => a.shipmentId.localeCompare(b.shipmentId) || String(a.charge || "").localeCompare(String(b.charge || ""))
       : (a, b) => String(a.location).localeCompare(String(b.location)) || a.shipmentId.localeCompare(b.shipmentId));
