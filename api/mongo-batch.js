@@ -34,7 +34,8 @@
 //   sea_jobs_export and sea_jobs_import (job number = shipmentNo), charge lines in sea_export_etdeta
 //   (job number = jobNo; LOB FFWD SEA EXP / IMP read as Sea Export / Import). Amounts are in INR.
 // SAR Indonesia — same rules as the SAR Indonesia Sea Ops dashboard (database sar-id-ops):
-//   • Jobs: th_ops_export, th_ops_import and id_ops_crosstrade. Direction from the LOB code (FES, FIA…);
+//   • Jobs: th_ops_export, th_ops_import and id_ops_crosstrade, one record per job (oneCopyPerJob). Direction from
+//     the LOB code (FES, FIA…);
 //     period = ETA (Import) or ETD, else Job Opened. Open = status not CMP / CLS and ETD (ETA for
 //     Import) more than 7 days ago.
 //   • Revenue Not Billed: the job has WIP lines with WIP > 0 and its ETD / ETA is more than 3 days
@@ -315,13 +316,61 @@ const newestId = (docs) => docs.reduce((m, d) => {
   return t > m ? t : m;
 }, 0);
 
+// One record per job, as the Indonesia / Thailand sea ops dashboards build it (buildCache and
+// dropWrongDirectionCopies there):
+//   • Cross Trade columns named differently (Job Operator…) are copied to the standard names.
+//   • A Cross Trade job that is also in the Export or Import sheet keeps only the Export/Import copy, labelled
+//     with the Cross Trade direction; it takes over the Cross Trade copy's income / expense totals for GP%.
+//     Indonesia keeps a Cross Trade row whose direction is plain Export / Import; Thailand drops it too.
+//   • Exact repeats (same job + LOB + direction) are dropped (the Thailand dashboard keeps them; dropped here too).
+//   • A job in both the Export and Import sheets keeps only the copy matching CargoWise's own Direction column.
+// docs: the three collections' documents, each list holding every copy of the jobs it has.
+const CROSS_TRADE_FIELD_MAP = { jobOperator: "operator", jobSalesRep: "salesRep", jobOpened: "jobOpenedDate" };
+function oneCopyPerJob(entity, [expDocs, impDocs, crossDocs]) {
+  for (const d of crossDocs)
+    for (const [from, to] of Object.entries(CROSS_TRADE_FIELD_MAP)) if (!filled(d[to]) && filled(d[from])) d[to] = d[from];
+  const ship = (d) => String(d.shipmentId ?? "").trim().toUpperCase();
+  const jobKey = (d) => [d.shipmentId, d.lob, d.direction].map((v) => String(v ?? "").trim().toUpperCase()).join("|");
+  const seen = new Set();
+  const repeat = (d) => {
+    if (!ship(d)) return false;
+    const k = jobKey(d);
+    if (seen.has(k)) return true;
+    seen.add(k);
+    return false;
+  };
+  const twins = new Map(), docs = [];
+  for (const d of [...expDocs, ...impDocs]) {
+    if (repeat(d)) continue;
+    if (ship(d) && !twins.has(ship(d))) twins.set(ship(d), d);
+    docs.push(d);
+  }
+  for (const d of crossDocs) {
+    const plain = entity === "indonesia" && /^(export|import)$/i.test(String(d.direction ?? "").trim());
+    const twin = !plain && ship(d) && twins.get(ship(d));
+    if (twin) {
+      if (/^.[EI]/i.test(String(twin.lob ?? ""))) twin.direction = d.direction || "Other/Cross Trade";
+      for (const f of [GP_INCOME, GP_EXPENSE]) if (!filled(twin[f]) && filled(d[f])) twin[f] = d[f];
+      continue;
+    }
+    if (!repeat(d)) docs.push(d);
+  }
+  const dirs = new Map();
+  for (const d of docs) if (ship(d)) (dirs.get(ship(d)) || dirs.set(ship(d), new Set()).get(ship(d))).add(idDirection(d));
+  return docs.filter((d) => {
+    if (!ship(d) || !filled(d.directionCol) || dirs.get(ship(d)).size < 2) return true;
+    const col = String(d.directionCol).trim();
+    return !((col === "Import" || col === "Export") && col !== idDirection(d));
+  });
+}
+const seaJobDocs = async (db, entity, filter, fields) => oneCopyPerJob(entity, await Promise.all(
+  SEA_JOB_COLLECTIONS[entity].map((name) => db.collection(name).find(filter, { projection: projectionOf(
+    [...fields, "_id", "shipmentId", "lob", "direction", "directionCol", ...Object.keys(CROSS_TRADE_FIELD_MAP), GP_INCOME, GP_EXPENSE]) }).toArray())));
+
 async function seaOpsData(db, entity) {
   const [jobDocs, wip] = await Promise.all([
-    Promise.all(SEA_JOB_COLLECTIONS[entity].map((name) => db.collection(name)
-      .find({}, { projection: { _id: 1, shipmentId: 1, lob: 1, direction: 1, jobBranch: 1, branch: 1, operator: 1, jobOwner: 1,
-                                originEtd: 1, destinationEta: 1, jobOpenedDate: 1, jobStatus: 1, operationLock: 1,
-                                operationsLockedOn: 1, financialLock: 1, financialsLockedOn: 1, jobProfit: 1,
-                                [GP_INCOME]: 1, [GP_EXPENSE]: 1 } }).toArray())).then((a) => a.flat()),
+    seaJobDocs(db, entity, {}, ["jobBranch", "branch", "operator", "jobOwner", "originEtd", "destinationEta", "jobOpenedDate",
+                                "jobStatus", "operationLock", "operationsLockedOn", "financialLock", "financialsLockedOn", "jobProfit"]),
     db.collection(ID_WIP).find({}, { projection: { _id: 1, shipmentId: 1, wip: 1, accrual: 1, revenue: 1, cost: 1 } }).toArray(),
   ]);
   // WIP > 0 lines and accrual ≠ 0 lines per shipment, as renderUnbilledRev / renderUnpostedCost build them
@@ -407,8 +456,11 @@ async function jobDetails(db, entity, body) {
   const cfg = US_LIKE[entity] || {}, key = jobKeyOf(cfg);
   const names = cfg.jobs || SEA_JOB_COLLECTIONS[entity] || CA_JOB_COLLECTIONS;
   const fields = SEA_JOB_COLLECTIONS[entity] ? ID_JOB_DETAIL_FIELDS : [...JOB_DETAIL_FIELDS, key];
-  const rows = (await Promise.all(names.map((name) => db.collection(name)
-    .find({ [key]: anyOf(ids) }, { projection: projectionOf(fields) }).toArray()))).flat();
+  const rows = SEA_JOB_COLLECTIONS[entity]
+    ? (await seaJobDocs(db, entity, { shipmentId: anyOf(ids) }, fields)).map(({ _id, directionCol, jobOperator, jobSalesRep, jobOpened,
+                                                                                  [GP_INCOME]: gi, [GP_EXPENSE]: ge, ...r }) => r)
+    : (await Promise.all(names.map((name) => db.collection(name)
+      .find({ [key]: anyOf(ids) }, { projection: projectionOf(fields) }).toArray()))).flat();
   if (key !== "shipmentId") for (const r of rows) r.shipmentId = r[key];
   return { rows };
 }
