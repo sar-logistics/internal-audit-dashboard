@@ -185,7 +185,7 @@ async function canadaData(db) {
 // maps the charge lines' LOB to SEA|AIR|ROAD EXPORT|IMPORT; cur: the suffix of the charge lines' amount fields.
 const US_LIKE = {
   usa:   { jobs: ["usa_ops_jobs"], etdeta: "usa_ops_etdeta", cur: "Usd", gp: true },
-  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr", gp: true },
+  stspl: { jobs: ["air_ops_export", "air_ops_import"], etdeta: "air_ops_etdeta", air: true, cur: "Inr", gp: true, revDays: 0 },
   stsplsea: { jobs: ["sea_jobs_export", "sea_jobs_import"], etdeta: "sea_export_etdeta", air: true, cur: "", gp: true,
               jobKey: "shipmentNo", lineKey: "jobNo", lineLob: "lob", openByDay: true,
               lobOf: { "FFWD SEA EXP": "SEA EXPORT", "FFWD SEA IMP": "SEA IMPORT" } },
@@ -267,13 +267,15 @@ async function usaEvaJobs(db, cfg) {
     t.cost += toNum(e.unpostedCost);
   }
   // Air (groupEtdEtaByShipment + _renderEtdEtaFlagged in the India Air dashboard): Billing Pendency =
-  // unbilled ≥ 1 and ETD/ETA New before today − 3 days; Pending Cost = unposted ≥ 1 and the first line ops-locked
-  const cut3 = istToday() - 3 * 864e5;
+  // unbilled ≥ 1 and ETD/ETA New before today − revDays (STSPL air: 0 since 18 Nov 2026, so yesterday's jobs
+  // count; STSPL ocean: 3); Pending Cost = unposted ≥ 1, and the first line ops-locked only while the page's
+  // Require Ops Lock switch is on (opsLocked; on by default for STSPL)
+  const cutRev = istToday() - (cfg.revDays ?? 3) * 864e5;
   return { fields: EVA_JOB_FIELDS, rows: [...byJob.values()].map((t) => {
     const base = [t.job, t.direction, t.lob, t.location || "(No Branch)", t.jobOwner || "(Unknown)", t.etdEtaNew];
     if (!cfg.air) return evaRow(base, t.rev, t.cost, t.locked);
     const etd = timeOf(t.etdEtaNew);
-    return [...base, round2(t.rev), round2(t.cost), t.rev >= AIR_MIN && etd !== null && etd < cut3, t.cost >= AIR_MIN && t.locked, t.locked];
+    return [...base, round2(t.rev), round2(t.cost), t.rev >= AIR_MIN && etd !== null && etd < cutRev, t.cost >= AIR_MIN, t.locked];
   }) };
 }
 
